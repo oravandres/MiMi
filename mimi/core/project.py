@@ -190,8 +190,8 @@ class Project(BaseModel):
             task = Task.from_config(task_config)
             project.tasks[task_name] = task
             
-        # Validate and initialize
+        # Validate task dependencies but don't initialize agents yet
+        # The main.py will call initialize() separately
         project.validate_task_dependencies()
-        project.initialize()
         
         return project 

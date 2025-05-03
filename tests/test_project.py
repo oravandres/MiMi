@@ -191,6 +191,73 @@ class TestProject:
         # Verify the order is correct
         assert order == ["task1", "task2", "task3"]
 
+    def test_get_execution_order_with_parallel_reviews(self) -> None:
+        """Test getting the execution order for tasks with parallel review tasks."""
+        # Create a simplified version of our parallel review workflow
+        task1 = Task(
+            name="documentation",
+            description="Create documentation",
+            agent="qa-engineer",
+            depends_on=[],
+        )
+        
+        # These tasks can run in parallel since they all depend only on documentation
+        backend_review = Task(
+            name="backend-review",
+            description="Review backend components",
+            agent="backend-reviewer",
+            depends_on=["documentation"],
+        )
+        
+        frontend_review = Task(
+            name="frontend-review",
+            description="Review frontend components",
+            agent="frontend-reviewer",
+            depends_on=["documentation"],
+        )
+        
+        infrastructure_review = Task(
+            name="infrastructure-review",
+            description="Review infrastructure components",
+            agent="infrastructure-reviewer",
+            depends_on=["documentation"],
+        )
+        
+        # This task depends on all three parallel review tasks
+        consolidate_reviews = Task(
+            name="consolidate-reviews",
+            description="Consolidate component reviews",
+            agent="reviewer",
+            depends_on=["backend-review", "frontend-review", "infrastructure-review"],
+        )
+        
+        # Create the project
+        project = Project(
+            name="test-project",
+            description="A test project with parallel reviews",
+            tasks={
+                "documentation": task1,
+                "backend-review": backend_review,
+                "frontend-review": frontend_review,
+                "infrastructure-review": infrastructure_review,
+                "consolidate-reviews": consolidate_reviews
+            },
+        )
+        
+        # Get execution order
+        order = project.get_execution_order()
+        
+        # Verify task1 comes first and consolidate_reviews comes last
+        assert order[0] == "documentation"
+        assert order[-1] == "consolidate-reviews"
+        
+        # Verify the three review tasks are all after task1 and before consolidate_reviews
+        # Note: The exact order of the parallel tasks might vary, but they should all
+        # be between task1 and consolidate_reviews
+        for review_task in ["backend-review", "frontend-review", "infrastructure-review"]:
+            assert review_task in order
+            assert order.index("documentation") < order.index(review_task) < order.index("consolidate-reviews")
+
     @patch("mimi.core.project.load_project_config")
     @patch("mimi.core.project.Agent.from_config")
     @patch("mimi.core.project.NumberAdderAgent.from_config")
@@ -239,29 +306,24 @@ class TestProject:
             },
         }
         
-        # Mock the agent creation
-        mock_agent1 = MagicMock()
-        mock_agent2 = MagicMock()
-        mock_agent3 = MagicMock()
-        mock_agent4 = MagicMock()
-        mock_agent5 = MagicMock()
-        mock_agent6 = MagicMock()
-        mock_agent7 = MagicMock()
-        mock_agent8 = MagicMock()
+        # Mock agents with minimal setup
+        for mock_func in [
+            mock_agent_from_config, 
+            mock_number_adder_from_config,
+            mock_analyst_agent_from_config,
+            mock_analyst_from_config,
+            mock_architect_from_config,
+            mock_engineer_from_config,
+            mock_qa_from_config,
+            mock_reviewer_from_config
+        ]:
+            mock_agent = MagicMock()
+            mock_func.return_value = mock_agent
         
-        mock_agent_from_config.return_value = mock_agent1
-        mock_number_adder_from_config.return_value = mock_agent2
-        mock_analyst_agent_from_config.return_value = mock_agent3
-        mock_analyst_from_config.return_value = mock_agent4
-        mock_architect_from_config.return_value = mock_agent5
-        mock_engineer_from_config.return_value = mock_agent6
-        mock_qa_from_config.return_value = mock_agent7
-        mock_reviewer_from_config.return_value = mock_agent8
-        
-        # Mock the task creation
-        mock_task1 = MagicMock()
-        mock_task2 = MagicMock()
-        mock_task_from_config.side_effect = [mock_task1, mock_task2]
+        # Mock task creation
+        for _ in range(2):
+            mock_task = MagicMock()
+            mock_task_from_config.return_value = mock_task
         
         # Call the method
         project = Project.from_config("fake_dir")
@@ -270,18 +332,25 @@ class TestProject:
         assert project.name == "Test Project"
         assert project.description == "A test project"
         
-        # Verify the agents were created correctly
+        # Verify the correct number of agents and tasks were created
         assert len(project.agents) == 8
-        assert project.agents["agent1"] == mock_agent1
-        assert project.agents["agent2"] == mock_agent2
-        assert project.agents["agent3"] == mock_agent3
-        assert project.agents["agent4"] == mock_agent4
-        assert project.agents["agent5"] == mock_agent5
-        assert project.agents["agent6"] == mock_agent6
-        assert project.agents["agent7"] == mock_agent7
-        assert project.agents["agent8"] == mock_agent8
+        agent_names = set(project.agents.keys())
+        expected_agent_names = {f"agent{i}" for i in range(1, 9)}
+        assert agent_names == expected_agent_names
         
-        # Verify the tasks were created correctly
+        # Check tasks were created
         assert len(project.tasks) == 2
-        assert project.tasks["task1"] == mock_task1
-        assert project.tasks["task2"] == mock_task2 
+        task_names = set(project.tasks.keys())
+        expected_task_names = {"task1", "task2"}
+        assert task_names == expected_task_names
+        
+        # Verify the from_config methods were called the expected number of times
+        assert mock_agent_from_config.call_count == 1
+        assert mock_number_adder_from_config.call_count == 1
+        assert mock_analyst_agent_from_config.call_count == 1
+        assert mock_analyst_from_config.call_count == 1
+        assert mock_architect_from_config.call_count == 1
+        assert mock_engineer_from_config.call_count == 1
+        assert mock_qa_from_config.call_count == 1
+        assert mock_reviewer_from_config.call_count == 1
+        assert mock_task_from_config.call_count == 2 

@@ -69,12 +69,33 @@ tasks:
     output_key: "documentation"
     depends_on: ["bug-fixing"]
 
+  - name: "backend-review"
+    description: "Review the backend components against requirements and best practices"
+    agent: "backend-reviewer"
+    input_key: "documentation"
+    output_key: "backend_review"
+    depends_on: ["documentation"]
+
+  - name: "frontend-review"
+    description: "Review the frontend components against requirements and best practices"
+    agent: "frontend-reviewer"
+    input_key: "documentation"
+    output_key: "frontend_review"
+    depends_on: ["documentation"]
+
+  - name: "infrastructure-review"
+    description: "Review the infrastructure components against requirements and best practices"
+    agent: "infrastructure-reviewer"
+    input_key: "documentation"
+    output_key: "infrastructure_review"
+    depends_on: ["documentation"]
+
   - name: "project-review"
-    description: "Review the final project against initial requirements"
+    description: "Consolidate component reviews into a comprehensive project review"
     agent: "reviewer"
     input_key: "documentation"
     output_key: "project_review"
-    depends_on: ["documentation"]
+    depends_on: ["backend-review", "frontend-review", "infrastructure-review"]
 
   - name: "issue-classification"
     description: "Classify review issues by responsible component/team"
@@ -123,4 +144,4 @@ tasks:
     agent: "reviewer"
     input_key: "integrated_fixes"
     output_key: "final_approval"
-    depends_on: ["fixes-integration"] 
+    depends_on: ["fixes-integration", "project-review"] 

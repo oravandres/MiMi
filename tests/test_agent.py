@@ -45,6 +45,8 @@ class TestAgent:
             model_name="test-model",
             base_url="http://localhost:11434",
             temperature=0.7,
+            suppress_log=True,
+            stream=False
         )
         assert agent._model_client == mock_client
 
@@ -75,8 +77,17 @@ class TestAgent:
         assert agent.model_provider == "ollama"
         assert agent.model_settings == {"temperature": 0.5}
         
+        # Initialize the agent to create the client
+        agent.initialize()
+        
         # Verify the client was created
-        mock_get_ollama.assert_called_once()
+        mock_get_ollama.assert_called_once_with(
+            model_name="test-model",
+            base_url="http://localhost:11434",
+            temperature=0.5,
+            suppress_log=True,
+            stream=False
+        )
 
 
 class TestNumberAdderAgent:
@@ -107,7 +118,13 @@ class TestNumberAdderAgent:
         )
         
         result = agent.execute(5)
-        assert result == 8
+        
+        # Agent now returns a dictionary with metadata instead of just the result
+        assert isinstance(result, dict)
+        assert result["result"] == 8.0
+        assert result["input_value"] == 5.0
+        assert result["number_added"] == 3
+        assert result["repetitions"] == 1
 
     def test_number_adder_execute_with_dict(self) -> None:
         """Test NumberAdderAgent.execute() with a dictionary input."""
@@ -120,7 +137,13 @@ class TestNumberAdderAgent:
         )
         
         result = agent.execute({"input": 7})
-        assert result == 9
+        
+        # Agent now returns a dictionary with metadata instead of just the result
+        assert isinstance(result, dict)
+        assert result["result"] == 9.0
+        assert result["input_value"] == 7.0
+        assert result["number_added"] == 2
+        assert result["repetitions"] == 1
 
     def test_number_adder_execute_with_invalid_input(self) -> None:
         """Test NumberAdderAgent.execute() with invalid input."""

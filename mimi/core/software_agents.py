@@ -619,6 +619,64 @@ class SoftwareEngineerAgent(Agent):
         project_title = "Unknown Project"
         project_dir_str = None
         
+        # Special handling for integration task - we detect this by checking if we're agent-1 and 
+        # receiving a complex dictionary with the right implementation keys
+        if (isinstance(task_input, dict) and 
+            "backend-implementation" in task_input and 
+            "frontend-implementation" in task_input and 
+            "infrastructure-implementation" in task_input):
+            
+            logger.info("Detected integration task based on input structure")
+            
+            # Extract components from results dictionary
+            backend_components = None
+            frontend_components = None
+            infrastructure_components = None
+            
+            # Try to extract the component data
+            for key, value in task_input.items():
+                if key == "backend-implementation" and isinstance(value, dict) and "data" in value:
+                    backend_components = value["data"]
+                    # Try to get project info
+                    if isinstance(backend_components, dict):
+                        project_title = backend_components.get("project_title", project_title)
+                        project_dir_str = backend_components.get("project_dir", project_dir_str)
+                
+                if key == "frontend-implementation" and isinstance(value, dict) and "data" in value:
+                    frontend_components = value["data"] 
+                    # Try to get project info
+                    if isinstance(frontend_components, dict):
+                        project_title = frontend_components.get("project_title", project_title)
+                        project_dir_str = frontend_components.get("project_dir", project_dir_str)
+                
+                if key == "infrastructure-implementation" and isinstance(value, dict) and "data" in value:
+                    infrastructure_components = value["data"]
+                    # Try to get project info
+                    if isinstance(infrastructure_components, dict):
+                        project_title = infrastructure_components.get("project_title", project_title)
+                        project_dir_str = infrastructure_components.get("project_dir", project_dir_str)
+            
+            # If we found all components, process as integration task
+            if backend_components and frontend_components and infrastructure_components:
+                # Get project directory if available
+                if project_dir_str:
+                    project_dir = Path(project_dir_str)
+                else:
+                    logger.warning(f"Project directory not found in integration task components, creating new one for {project_title}")
+                    project_dir = get_project_directory(project_title)
+                
+                # Create a clean components dictionary for the integration method
+                components = {
+                    "backend_components": backend_components,
+                    "frontend_components": frontend_components,
+                    "infrastructure_components": infrastructure_components
+                }
+                
+                # Call integration method
+                logger.info(f"Calling _integrate_components with extracted component data")
+                return self._integrate_components(components, project_dir, project_title)
+        
+        # Original handling for other cases
         if isinstance(task_input, dict):
             project_title = task_input.get("project_title", "Unknown Project")
             project_dir_str = task_input.get("project_dir", None)
@@ -1350,10 +1408,56 @@ class SoftwareEngineerAgent(Agent):
     
     def _integrate_components(self, components: Dict[str, Any], project_dir: Path, project_title: str) -> Dict[str, Any]:
         """Integrate all components into a complete system."""
-        backend_components = components.get("backend_components", "")
-        frontend_components = components.get("frontend_components", "")
-        infrastructure_components = components.get("infrastructure_components", "")
+        agent_log(
+            self.name,
+            "execute",
+            f"Integrating components for {project_title}"
+        )
         
+        # Components might be wrapped in our task result format
+        backend_components = None
+        frontend_components = None 
+        infrastructure_components = None
+        
+        # Log the component structure received
+        logger.debug(f"Received components for integration: {list(components.keys())}")
+        
+        # Try different ways of extracting components
+        if isinstance(components, dict):
+            # Direct dictionary with component keys
+            if "backend_components" in components:
+                logger.debug("Found direct backend_components key")
+                backend_components = components.get("backend_components", "")
+                frontend_components = components.get("frontend_components", "")
+                infrastructure_components = components.get("infrastructure_components", "")
+            
+            # Results dictionary with task names as keys
+            elif "backend-implementation" in components:
+                logger.debug("Found backend-implementation task key")
+                backend_data = components.get("backend-implementation", {})
+                frontend_data = components.get("frontend-implementation", {})
+                infra_data = components.get("infrastructure-implementation", {})
+                
+                # Extract data from the results format
+                if isinstance(backend_data, dict) and "data" in backend_data:
+                    backend_components = backend_data["data"]
+                if isinstance(frontend_data, dict) and "data" in frontend_data:
+                    frontend_components = frontend_data["data"]
+                if isinstance(infra_data, dict) and "data" in infra_data:
+                    infrastructure_components = infra_data["data"]
+        
+        # If components still None, log error
+        if backend_components is None or frontend_components is None or infrastructure_components is None:
+            logger.error(f"Failed to extract components for integration. Input keys: {list(components.keys())}")
+            error_msg = "Missing required components for integration"
+            agent_log(self.name, "error", error_msg)
+            return {
+                "status": "error",
+                "message": error_msg,
+                "project_title": project_title,
+                "project_dir": str(project_dir)
+            }
+            
         system_prompt = """
         You are an expert Software Integration Engineer. Your task is to:
         1. Review all component implementations (backend, frontend, infrastructure)
@@ -1449,7 +1553,7 @@ class QAEngineerAgent(Agent):
         agent_log(
             self.name,
             "execute",
-            f"Testing or documenting system: {task_input}"
+            f"Testing or documenting system"
         )
         
         # Get the project directory from the input
@@ -1729,26 +1833,50 @@ class ReviewerAgent(Agent):
         Returns:
             A dictionary with project review or final approval.
         """
-        agent_log(
-            self.name,
-            "execute",
-            f"Reviewing project: {str(task_input)}"
-        )
+        
         
         # Get the project directory from the input
         project_title = task_input.get("project_title", "Software Project")
         project_dir_str = task_input.get("project_dir", None)
         
+        agent_log(
+            self.name,
+            "execute",
+            f"Reviewing project: {project_title}"
+        )
+
         # Get the project directory
         if project_dir_str:
             project_dir = Path(project_dir_str)
         else:
             project_dir = get_project_directory(project_title)
         
-        # Determine if this is initial review or final approval
+        # Determine the review type and focus based on agent's role
+        review_focus = "general"
+        if hasattr(self, 'role'):
+            role_lower = self.role.lower()
+            if "backend" in role_lower:
+                review_focus = "backend"
+            elif "frontend" in role_lower:
+                review_focus = "frontend"
+            elif "infrastructure" in role_lower:
+                review_focus = "infrastructure"
+        
+        logger.debug(f"ReviewerAgent role: {getattr(self, 'role', 'unknown')}, focus: {review_focus}")
+        
+        # Determine if this is a specialized component review, a consolidated review, or final approval
         if "documentation" in task_input:
             documentation = task_input.get("documentation", "")
-            return self._review_project(documentation, task_input, project_dir, project_title)
+            
+            # Check if we have component reviews already available (for consolidation)
+            has_component_reviews = any(k for k in task_input.keys() if k.endswith('_review') and k != 'project_review')
+            
+            if has_component_reviews:
+                # Consolidate component reviews
+                return self._consolidate_reviews(documentation, task_input, project_dir, project_title)
+            else:
+                # Do a specialized component review
+                return self._review_component(documentation, task_input, project_dir, project_title, review_focus)
         elif "revised_system" in task_input:
             revised_system = task_input.get("revised_system", "")
             return self._final_approval(revised_system, task_input, project_dir, project_title)
@@ -1763,8 +1891,8 @@ class ReviewerAgent(Agent):
                 "input_keys": list(task_input.keys())
             }
     
-    def _review_project(self, documentation: str, full_input: Dict[str, Any], project_dir: Path, project_title: str) -> Dict[str, Any]:
-        """Review the project against initial requirements."""
+    def _review_component(self, documentation: str, full_input: Dict[str, Any], project_dir: Path, project_title: str, component_type: str) -> Dict[str, Any]:
+        """Review a specific component type against requirements."""
         # Try to find original requirements from the task chain
         original_requirements = ""
         for key in full_input:
@@ -1772,16 +1900,52 @@ class ReviewerAgent(Agent):
                 original_requirements = full_input[key]
                 break
         
-        system_prompt = """
-        You are an expert Project Reviewer. Your task is to:
-        1. Review the project documentation against the initial requirements
-        2. Evaluate the project's completeness, quality, and adherence to requirements
-        3. Identify any gaps, issues, or areas for improvement
-        4. Provide a detailed assessment of the project
+        # Define component-specific system prompts
+        component_prompts = {
+            "backend": """
+            You are an expert Backend Reviewer specializing in server-side components. Your task is to:
+            1. Review the backend components against requirements and best practices
+            2. Evaluate code quality, API design, data handling, and security
+            3. Identify any performance bottlenecks or scalability issues
+            4. Assess database design and query optimization
+            5. Check error handling and logging approaches
+            
+            Focus on providing detailed feedback specific to backend components.
+            """,
+            "frontend": """
+            You are an expert Frontend Reviewer specializing in client-side components. Your task is to:
+            1. Review the frontend components against requirements and best practices
+            2. Evaluate UI/UX design, responsiveness, and accessibility
+            3. Assess component structure, state management, and data flow
+            4. Check for proper error handling and user feedback
+            5. Review performance optimizations and load times
+            
+            Focus on providing detailed feedback specific to frontend components.
+            """,
+            "infrastructure": """
+            You are an expert Infrastructure Reviewer specializing in deployment and DevOps. Your task is to:
+            1. Review the infrastructure components against requirements and best practices
+            2. Evaluate deployment processes, CI/CD pipelines, and automation
+            3. Assess security configurations, monitoring, and logging
+            4. Check scalability, high availability, and disaster recovery
+            5. Review environment configuration and management
+            
+            Focus on providing detailed feedback specific to infrastructure components.
+            """,
+            "general": """
+            You are an expert Project Reviewer. Your task is to:
+            1. Review the project documentation against the initial requirements
+            2. Evaluate the project's completeness, quality, and adherence to requirements
+            3. Identify any gaps, issues, or areas for improvement
+            4. Provide a detailed assessment of the project
+            
+            Focus on being thorough and critical to ensure the project meets all requirements.
+            """
+        }
         
-        Focus on being thorough and critical to ensure the project meets all requirements.
-        """
+        system_prompt = component_prompts.get(component_type, component_prompts["general"])
         
+        # Construct component-specific prompt
         prompt = f"""
         # Project Documentation
         {documentation}
@@ -1790,15 +1954,15 @@ class ReviewerAgent(Agent):
         {original_requirements}
         
         # Task
-        Review the project by:
-        - Assessing how well it meets each original requirement
-        - Evaluating the overall architecture and implementation quality
-        - Identifying any gaps or missing features
-        - Noting any potential issues or concerns
+        Review the {component_type} components by:
+        - Assessing how well they meet relevant requirements
+        - Evaluating code quality, architecture, and implementation
+        - Identifying any gaps, bugs, or missing features
+        - Noting potential issues specific to {component_type}
         - Suggesting improvements or enhancements
-        - Providing an overall assessment (acceptable, needs minor revisions, needs major revisions)
+        - Providing an overall assessment of the {component_type} components
         
-        Format your response as a structured review document.
+        Format your response as a structured review document focusing specifically on {component_type} components.
         """
         
         # Get model client
@@ -1808,6 +1972,89 @@ class ReviewerAgent(Agent):
         response = client.generate(prompt, system_prompt=system_prompt)
         
         # Save the review document
+        review_filename = f"{component_type}_review.md"
+        review_path = project_dir / "docs" / review_filename
+        with open(review_path, 'w') as f:
+            f.write(response)
+        
+        # Structure the output
+        review = {
+            "timestamp": datetime.now().isoformat(),
+            "reviewer": self.name,
+            f"{component_type}_review": response,
+            "documentation": documentation,
+            "original_requirements": original_requirements,
+            "project_title": project_title,
+            "project_dir": str(project_dir),
+            "review_path": str(review_path),
+            "component_type": component_type
+        }
+        
+        agent_log(
+            self.name,
+            "execute",
+            f"Successfully reviewed the {component_type} components and saved review to {review_path}"
+        )
+        
+        return review
+    
+    def _consolidate_reviews(self, documentation: str, full_input: Dict[str, Any], project_dir: Path, project_title: str) -> Dict[str, Any]:
+        """Consolidate component reviews into a comprehensive project review."""
+        # Extract component reviews
+        backend_review = full_input.get("backend_review", "")
+        frontend_review = full_input.get("frontend_review", "")
+        infrastructure_review = full_input.get("infrastructure_review", "")
+        
+        # Try to find original requirements
+        original_requirements = full_input.get("original_requirements", "")
+        
+        system_prompt = """
+        You are an expert Project Review Consolidator. Your task is to:
+        1. Analyze separate reviews of backend, frontend, and infrastructure components
+        2. Identify common themes, issues, and strengths across components
+        3. Create a comprehensive project-level review that addresses system-wide concerns
+        4. Prioritize issues and improvements based on severity and impact
+        
+        Focus on creating a balanced, thorough assessment that addresses how the components work together.
+        """
+        
+        prompt = f"""
+        # Component Reviews
+        
+        ## Backend Review
+        {backend_review}
+        
+        ## Frontend Review
+        {frontend_review}
+        
+        ## Infrastructure Review
+        {infrastructure_review}
+        
+        # Project Documentation
+        {documentation}
+        
+        # Original Requirements
+        {original_requirements}
+        
+        # Task
+        Consolidate these component reviews into a comprehensive project review by:
+        - Summarizing key findings from all component reviews
+        - Identifying cross-cutting concerns that affect multiple components
+        - Evaluating how well components integrate with each other
+        - Assessing overall project quality and alignment with requirements
+        - Prioritizing issues by severity and providing actionable recommendations
+        - Creating a final assessment (acceptable, needs minor revisions, needs major revisions)
+        
+        Format your response as a structured consolidated review document.
+        """
+        
+        # Get model client
+        client = self.get_model_client()
+        
+        # Generate consolidated review using the model
+        response = client.generate(prompt, system_prompt=system_prompt)
+        
+        # Save the consolidated review document
         review_path = project_dir / "docs" / "project_review.md"
         with open(review_path, 'w') as f:
             f.write(response)
@@ -1817,6 +2064,9 @@ class ReviewerAgent(Agent):
             "timestamp": datetime.now().isoformat(),
             "reviewer": self.name,
             "project_review": response,
+            "backend_review": backend_review,
+            "frontend_review": frontend_review,
+            "infrastructure_review": infrastructure_review,
             "documentation": documentation,
             "original_requirements": original_requirements,
             "project_title": project_title,
@@ -1827,7 +2077,7 @@ class ReviewerAgent(Agent):
         agent_log(
             self.name,
             "execute",
-            f"Successfully reviewed the project and saved review to {review_path}"
+            f"Successfully consolidated component reviews into a project review and saved to {review_path}"
         )
         
         return review
@@ -1835,13 +2085,11 @@ class ReviewerAgent(Agent):
     def _final_approval(self, revised_system: str, full_input: Dict[str, Any], project_dir: Path, project_title: str) -> Dict[str, Any]:
         """Final review of the project after revisions."""
         # Try to find original requirements and previous review
-        original_requirements = ""
-        project_review = ""
-        for key in full_input:
-            if key == "original_requirements":
-                original_requirements = full_input[key]
-            elif key == "project_review":
-                project_review = full_input[key]
+        original_requirements = full_input.get("original_requirements", "")
+        project_review = full_input.get("project_review", "")
+        
+        # Log what we have for debugging
+        logger.debug(f"Final approval input keys: {list(full_input.keys())}")
         
         system_prompt = """
         You are an expert Project Reviewer conducting a final assessment. Your task is to:
@@ -1877,31 +2125,41 @@ class ReviewerAgent(Agent):
         # Get model client
         client = self.get_model_client()
         
-        # Generate final approval using the model
-        response = client.generate(prompt, system_prompt=system_prompt)
-        
-        # Save the final approval document
-        approval_path = project_dir / "docs" / "final_approval.md"
-        with open(approval_path, 'w') as f:
-            f.write(response)
-        
-        # Structure the output
-        final_approval = {
-            "timestamp": datetime.now().isoformat(),
-            "reviewer": self.name,
-            "final_approval": response,
-            "revised_system": revised_system,
-            "project_review": project_review,
-            "original_requirements": original_requirements,
-            "project_title": project_title,
-            "project_dir": str(project_dir),
-            "approval_path": str(approval_path)
-        }
-        
-        agent_log(
-            self.name,
-            "execute",
-            f"Successfully completed final project review and saved to {approval_path}"
-        )
-        
-        return final_approval 
+        try:
+            # Generate final approval using the model
+            response = client.generate(prompt, system_prompt=system_prompt)
+            
+            # Save the final approval document
+            approval_path = project_dir / "docs" / "final_approval.md"
+            with open(approval_path, 'w') as f:
+                f.write(response)
+            
+            # Structure the output
+            final_approval = {
+                "timestamp": datetime.now().isoformat(),
+                "reviewer": self.name,
+                "final_approval": response,
+                "revised_system": revised_system,
+                "project_review": project_review,
+                "original_requirements": original_requirements,
+                "project_title": project_title,
+                "project_dir": str(project_dir),
+                "approval_path": str(approval_path)
+            }
+            
+            agent_log(
+                self.name,
+                "execute",
+                f"Successfully completed final review and saved to {approval_path}"
+            )
+            
+            return final_approval
+            
+        except Exception as e:
+            error_msg = f"Error generating final approval: {str(e)}"
+            agent_log(self.name, "error", error_msg)
+            return {
+                "status": "error",
+                "message": error_msg,
+                "final_approval": error_msg
+            }
