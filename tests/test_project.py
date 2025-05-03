@@ -260,7 +260,6 @@ class TestProject:
 
     @patch("mimi.core.project.load_project_config")
     @patch("mimi.core.project.Agent.from_config")
-    @patch("mimi.core.project.NumberAdderAgent.from_config")
     @patch("mimi.core.project.AnalystAgent.from_config")
     @patch("mimi.core.project.ResearchAnalystAgent.from_config")
     @patch("mimi.core.project.ArchitectAgent.from_config")

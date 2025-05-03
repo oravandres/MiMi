@@ -112,7 +112,6 @@ Each agent logs its operations and provides detailed step-by-step breakdown of e
 
 The workflow follows this pattern:
 
-1. **Multi-Step Addition**: Each NumberAdderAgent performs its addition operation multiple times (5 repetitions)
 2. **Detailed Verification**: The AnalystAgent verifies all calculation steps for accuracy
 3. **Comprehensive Feedback**: The FeedbackProcessorAgent processes verification results and provides detailed feedback
 4. **Sequential Processing**: After verification, the workflow moves to the next agent

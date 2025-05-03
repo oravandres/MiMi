@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from mimi.core.agent import Agent, NumberAdderAgent
+from mimi.core.agent import Agent
 
 
 class TestAgent:
@@ -89,71 +89,3 @@ class TestAgent:
             stream=False
         )
 
-
-class TestNumberAdderAgent:
-    """Tests for the NumberAdderAgent class."""
-
-    def test_number_adder_creation(self) -> None:
-        """Test creating a NumberAdderAgent instance."""
-        agent = NumberAdderAgent(
-            name="adder-agent",
-            role="number-adder",
-            description="Agent that adds numbers",
-            model_name="test-model",
-            number_to_add=10,
-        )
-        
-        assert agent.name == "adder-agent"
-        assert agent.role == "number-adder"
-        assert agent.number_to_add == 10
-
-    def test_number_adder_execute_with_number(self) -> None:
-        """Test NumberAdderAgent.execute() with a number input."""
-        agent = NumberAdderAgent(
-            name="adder-agent",
-            role="number-adder",
-            description="Agent that adds numbers",
-            model_name="test-model",
-            number_to_add=3,
-        )
-        
-        result = agent.execute(5)
-        
-        # Agent now returns a dictionary with metadata instead of just the result
-        assert isinstance(result, dict)
-        assert result["result"] == 8.0
-        assert result["input_value"] == 5.0
-        assert result["number_added"] == 3
-        assert result["repetitions"] == 1
-
-    def test_number_adder_execute_with_dict(self) -> None:
-        """Test NumberAdderAgent.execute() with a dictionary input."""
-        agent = NumberAdderAgent(
-            name="adder-agent",
-            role="number-adder",
-            description="Agent that adds numbers",
-            model_name="test-model",
-            number_to_add=2,
-        )
-        
-        result = agent.execute({"input": 7})
-        
-        # Agent now returns a dictionary with metadata instead of just the result
-        assert isinstance(result, dict)
-        assert result["result"] == 9.0
-        assert result["input_value"] == 7.0
-        assert result["number_added"] == 2
-        assert result["repetitions"] == 1
-
-    def test_number_adder_execute_with_invalid_input(self) -> None:
-        """Test NumberAdderAgent.execute() with invalid input."""
-        agent = NumberAdderAgent(
-            name="adder-agent",
-            role="number-adder",
-            description="Agent that adds numbers",
-            model_name="test-model",
-            number_to_add=5,
-        )
-        
-        with pytest.raises(ValueError):
-            agent.execute("not a number") 

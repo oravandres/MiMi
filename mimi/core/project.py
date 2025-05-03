@@ -12,7 +12,7 @@ if vendor_path.exists() and str(vendor_path) not in sys.path:
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from mimi.core.agent import Agent, NumberAdderAgent, AnalystAgent, FeedbackProcessorAgent
+from mimi.core.agent import Agent, AnalystAgent, FeedbackProcessorAgent
 from mimi.core.software_agents import ResearchAnalystAgent, ArchitectAgent, SoftwareEngineerAgent, QAEngineerAgent, ReviewerAgent
 from mimi.core.task import Task
 from mimi.utils.config import load_project_config
@@ -158,10 +158,7 @@ class Project(BaseModel):
             agent_name = agent_config.get("name", "")
             agent_type = agent_config.get("type", "default")
             
-            if agent_type.lower() == "number_adder":
-                # Special case for number adder agents
-                agent = NumberAdderAgent.from_config(agent_config)
-            elif agent_type.lower() == "analyst":
+            if agent_type.lower() == "analyst":
                 # Special case for analyst agents
                 agent = AnalystAgent.from_config(agent_config)
             elif agent_type.lower() == "feedback_processor":
