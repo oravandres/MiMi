@@ -7,22 +7,24 @@ import threading
 import time
 
 from mimi.core.project import Project
-from mimi.core.task import Task
+from mimi.core.task import Task, SubTask
 from mimi.utils.logger import logger, project_log, task_log
 
 
 class TaskRunner:
     """Runner for executing individual tasks."""
 
-    def __init__(self, task: Task, agent_lookup: Dict[str, Any]) -> None:
+    def __init__(self, task: Task, agent_lookup: Dict[str, Any], max_subtask_workers: int = 4) -> None:
         """Initialize the task runner.
         
         Args:
             task: The task to execute.
             agent_lookup: Dictionary mapping agent names to agent objects.
+            max_subtask_workers: Maximum number of parallel workers for subtasks.
         """
         self.task = task
         self.agent_lookup = agent_lookup
+        self.max_subtask_workers = max_subtask_workers
         task_log(
             task.name,
             "init",
@@ -44,7 +46,17 @@ class TaskRunner:
             f"Executing task with agent '{self.task.agent}'",
         )
         
+        # Execute the task, which may create subtasks
         result = self.task.execute(self.agent_lookup, input_data)
+        
+        # If the task created subtasks, execute them
+        if self.task.has_subtasks():
+            task_log(
+                self.task.name,
+                "subtasks",
+                f"Task created {len(self.task.get_subtasks())} subtasks. Executing them.",
+            )
+            result = self._execute_subtasks(result)
         
         task_log(
             self.task.name,
@@ -59,6 +71,121 @@ class TaskRunner:
         )
         
         return result
+
+    def _execute_subtasks(self, parent_result: Any) -> Any:
+        """Execute subtasks in parallel and combine their results.
+        
+        Args:
+            parent_result: The result from the parent task's execution.
+            
+        Returns:
+            The combined result from all subtasks.
+        """
+        subtasks = self.task.get_subtasks()
+        if not subtasks:
+            return parent_result
+            
+        agent = self.agent_lookup[self.task.agent]
+        results = {}
+        
+        # First, preprocess the subtasks to check dependencies
+        subtask_map = {subtask.id: subtask for subtask in subtasks}
+        dependency_map = {subtask.id: subtask.depends_on for subtask in subtasks}
+        
+        # Track completed subtasks
+        completed_subtasks = set()
+        
+        # Create a new executor for subtasks
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self.max_subtask_workers) as executor:
+            # Continue until all subtasks are completed
+            while len(completed_subtasks) < len(subtasks):
+                # Find subtasks that are ready to execute (all dependencies satisfied)
+                ready_subtasks = []
+                for subtask_id, dependencies in dependency_map.items():
+                    if subtask_id not in completed_subtasks and all(dep in completed_subtasks for dep in dependencies):
+                        ready_subtasks.append(subtask_id)
+                
+                if not ready_subtasks:
+                    if len(completed_subtasks) < len(subtasks):
+                        logger.warning(f"No subtasks ready but not all completed. Possible circular dependency.")
+                        break
+                    else:
+                        break
+                
+                task_log(
+                    self.task.name,
+                    "subtasks",
+                    f"Executing batch of {len(ready_subtasks)} subtasks",
+                )
+                
+                # Submit ready subtasks to the executor
+                futures = {}
+                for subtask_id in ready_subtasks:
+                    subtask = subtask_map[subtask_id]
+                    future = executor.submit(self._execute_single_subtask, subtask, agent)
+                    futures[future] = subtask_id
+                
+                # Wait for submitted subtasks to complete
+                for future in concurrent.futures.as_completed(futures):
+                    subtask_id = futures[future]
+                    try:
+                        result = future.result()
+                        subtask_map[subtask_id] = result  # Update subtask with result
+                        completed_subtasks.add(subtask_id)
+                    except Exception as e:
+                        logger.error(f"Error executing subtask {subtask_id}: {str(e)}")
+                        # Consider the subtask completed even if it failed
+                        completed_subtasks.add(subtask_id)
+        
+        # Once all subtasks are completed, combine their results
+        task_log(
+            self.task.name,
+            "subtasks",
+            f"All subtasks completed. Combining results.",
+        )
+        
+        subtasks_with_results = list(subtask_map.values())
+        return agent.combine_subtask_results(subtasks_with_results, parent_result)
+    
+    def _execute_single_subtask(self, subtask: SubTask, agent: Any) -> SubTask:
+        """Execute a single subtask and update it with the result.
+        
+        Args:
+            subtask: The subtask to execute.
+            agent: The agent to use for execution.
+            
+        Returns:
+            The updated subtask object with result.
+        """
+        task_log(
+            self.task.name,
+            "subtask",
+            f"Executing subtask '{subtask.name}'",
+        )
+        
+        try:
+            start_time = time.time()
+            result = agent.execute_subtask(subtask)
+            duration = time.time() - start_time
+            
+            # Update the subtask with the result and duration
+            subtask.result = result
+            subtask.duration = duration
+            
+            task_log(
+                self.task.name,
+                "subtask",
+                f"Subtask '{subtask.name}' completed in {duration:.2f}s",
+            )
+            
+            return subtask
+        except Exception as e:
+            logger.error(f"Error in subtask execution: {str(e)}")
+            # Add error information to the subtask
+            subtask.result = {"error": str(e)}
+            subtask.duration = 0
+            
+            return subtask
 
 
 class ProjectRunner:
@@ -94,7 +221,7 @@ class ProjectRunner:
             A dictionary with the task result.
         """
         task = self.project.tasks[task_name]
-        runner = TaskRunner(task, self.project.agents)
+        runner = TaskRunner(task, self.project.agents, max_subtask_workers=4)
         
         project_log(
             self.project.name,

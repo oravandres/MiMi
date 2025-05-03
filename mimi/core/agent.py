@@ -9,12 +9,24 @@ if vendor_path.exists() and str(vendor_path) not in sys.path:
     sys.path.append(str(vendor_path))
 
 from typing import Any, Dict, List, Optional, Union, Callable
+import uuid
 
 from pydantic import BaseModel, Field, ConfigDict
 
 from mimi.models.ollama import OllamaClient, get_ollama_client
 from mimi.utils.logger import agent_log, logger
 from mimi.utils.output_manager import create_or_update_agent_log
+
+
+# Import subtask via string to avoid circular imports
+SubTask = None
+
+def get_subtask_class():
+    """Get the SubTask class, importing it only when needed."""
+    global SubTask
+    if SubTask is None:
+        from mimi.core.task import SubTask
+    return SubTask
 
 
 class Agent(BaseModel):
@@ -36,6 +48,11 @@ class Agent(BaseModel):
     # Optional system prompt to give the agent context
     system_prompt: Optional[str] = Field(
         None, description="System prompt for the agent"
+    )
+    
+    # Whether agent supports subtask creation
+    supports_subtasks: bool = Field(
+        default=False, description="Whether the agent supports breaking tasks into subtasks"
     )
 
     # Model client (populated at runtime)
@@ -368,75 +385,125 @@ class Agent(BaseModel):
         agent = cls(**config)
         return agent
 
-
-class NumberAdderAgent(Agent):
-    """Agent that adds a specific number to the input."""
-    
-    number_to_add: int = Field(1, description="Number to add to the input")
-    repetitions: int = Field(1, description="Number of times to add the number")
-    
-    def execute(self, task_input: Any) -> Any:
-        """Add the specified number to the input multiple times based on repetitions.
+    def create_subtasks(self, task_input: Any) -> List[Any]:
+        """Create subtasks from the given task input.
+        
+        This is a base implementation that can be overridden by specialized agents
+        that support subtask creation.
         
         Args:
-            task_input: Input value (will be converted to a number).
+            task_input: The input to the agent.
             
         Returns:
-            The input plus (agent's number_to_add * repetitions).
+            A list of SubTask objects.
         """
-        agent_log(
-            self.name, 
-            "execute", 
-            f"Adding {self.number_to_add} to input {self.repetitions} times: {str(task_input)}",
-        )
+        if not self.supports_subtasks:
+            agent_log(self.name, "subtasks", f"Agent does not support subtask creation")
+            return []
+            
+        # Base implementation doesn't create subtasks
+        agent_log(self.name, "subtasks", f"Creating subtasks not implemented for base Agent class")
+        return []
         
-        try:
-            # Convert input to number
-            if isinstance(task_input, (dict)) and "input" in task_input:
-                # Handle dict with "input" key
-                input_value = float(task_input["input"])
-            elif isinstance(task_input, (list)) and len(task_input) > 0:
-                # Handle list with "input" as first item
-                input_value = float(task_input[0])
+    def execute_subtask(self, subtask: Any) -> Any:
+        """Execute a single subtask.
+        
+        Args:
+            subtask: The subtask to execute.
+            
+        Returns:
+            The output from the subtask execution.
+        """
+        agent_log(self.name, "execute_subtask", f"Executing subtask: {subtask.name}")
+        
+        # Get model client if needed
+        model_client = self.get_model_client()
+        
+        # Process the subtask based on its name and content
+        if subtask.name.startswith("chunk_"):
+            # Process a list chunk
+            result = []
+            for item in subtask.input_data:
+                # Apply some processing - for demonstration, just increment numbers
+                if isinstance(item, (int, float)):
+                    result.append(item + 1)
+                else:
+                    result.append(item)
+            return result
+            
+        elif subtask.name.startswith("dict_chunk_"):
+            # Process a dictionary chunk
+            result = {}
+            for key, value in subtask.input_data.items():
+                # Apply some processing - for demonstration, just increment numeric values
+                if isinstance(value, (int, float)):
+                    result[key] = value + 1
+                else:
+                    result[key] = value
+            return result
+            
+        elif subtask.name.startswith("text_chunk_"):
+            # Process a text chunk - for demonstration, just convert to uppercase
+            return subtask.input_data.upper()
+            
+        else:
+            # Default processing
+            if isinstance(subtask.input_data, (int, float)):
+                return subtask.input_data + 1
+            elif isinstance(subtask.input_data, str):
+                return f"Processed: {subtask.input_data}"
             else:
-                # Try direct conversion
-                input_value = float(task_input)
+                return subtask.input_data
+    
+    def combine_subtask_results(self, subtasks: List[Any], original_input: Any) -> Any:
+        """Combine the results of multiple subtasks.
+        
+        Args:
+            subtasks: The list of subtasks with their results.
+            original_input: The original task input.
+            
+        Returns:
+            The combined output from all subtasks.
+        """
+        agent_log(self.name, "combine", f"Combining results from {len(subtasks)} subtasks")
+        
+        # Extract results from subtasks
+        results = [st.result for st in subtasks]
+        
+        # Combine based on the type of the first result
+        if all(isinstance(r, list) for r in results if r is not None):
+            # Combine lists
+            combined = []
+            for result in results:
+                if result is not None:
+                    combined.extend(result)
+            return combined
+            
+        elif all(isinstance(r, dict) for r in results if r is not None):
+            # Combine dictionaries
+            combined = {}
+            for result in results:
+                if result is not None:
+                    combined.update(result)
+            return combined
+            
+        elif all(isinstance(r, str) for r in results if r is not None):
+            # Combine strings
+            return "".join(r for r in results if r is not None)
+            
+        else:
+            # Default combination - return a dictionary of results
+            combined_result = {}
+            
+            # Include the original input in the combined result
+            if isinstance(original_input, dict):
+                combined_result.update(original_input)
+            
+            # Add each subtask result to the combined result
+            for i, result in enumerate(results):
+                combined_result[f"subtask_{i+1}_result"] = result
                 
-            # Perform the addition multiple times
-            total_to_add = self.number_to_add * self.repetitions
-            result = input_value + total_to_add
-            
-            # Keep track of intermediate steps for verification
-            steps = []
-            current_value = input_value
-            for i in range(self.repetitions):
-                current_value += self.number_to_add
-                steps.append({
-                    "step": i + 1,
-                    "value_before": current_value - self.number_to_add,
-                    "value_after": current_value,
-                    "added": self.number_to_add
-                })
-            
-            agent_log(
-                self.name,
-                "execute",
-                f"Successfully added {self.number_to_add} to {input_value} {self.repetitions} times, result: {result}",
-            )
-            
-            # Return result with calculation steps for verification
-            return {
-                "result": result,
-                "input_value": input_value,
-                "number_added": self.number_to_add,
-                "repetitions": self.repetitions,
-                "total_added": total_to_add,
-                "steps": steps
-            }
-        except (ValueError, TypeError) as e:
-            error_msg = f"Failed to convert input to number: {str(e)}"
-            agent_log(self.name, "error", error_msg)
-            raise ValueError(error_msg) from e
+            return combined_result
 
 
 class AnalystAgent(Agent):
@@ -778,4 +845,215 @@ class FeedbackProcessorAgent(Agent):
                 "message": error_message,
                 "continue": False,  # Halt on unexpected errors
                 "original_data": task_input
-            } 
+            }
+
+
+class TaskSplitterAgent(Agent):
+    """An agent that can split tasks into subtasks and execute them in parallel."""
+    
+    # Set this to True to enable subtask creation
+    supports_subtasks: bool = Field(default=True, description="Whether the agent supports breaking tasks into subtasks")
+    
+    # Number of subtasks to create (default to a reasonable number)
+    num_subtasks: int = Field(default=4, description="Number of subtasks to create")
+    
+    def create_subtasks(self, task_input: Any) -> List[Any]:
+        """Create subtasks from the given task input.
+        
+        Args:
+            task_input: The input to the agent.
+            
+        Returns:
+            A list of SubTask objects.
+        """
+        agent_log(self.name, "subtasks", f"Creating {self.num_subtasks} subtasks")
+        
+        # Get the SubTask class
+        SubTask = get_subtask_class()
+        
+        # For demonstration purposes, let's split a list or dictionary task into smaller pieces
+        subtasks = []
+        
+        if isinstance(task_input, list) and len(task_input) > 1:
+            # Split list into chunks
+            chunk_size = max(1, len(task_input) // self.num_subtasks)
+            chunks = [task_input[i:i + chunk_size] for i in range(0, len(task_input), chunk_size)]
+            
+            # Create a subtask for each chunk
+            for i, chunk in enumerate(chunks[:self.num_subtasks]):
+                subtask = SubTask(
+                    parent_task_name=self.name,
+                    name=f"chunk_{i+1}",
+                    description=f"Process list chunk {i+1} of {len(chunks)}",
+                    input_data=chunk,
+                    depends_on=[]
+                )
+                subtasks.append(subtask)
+                
+        elif isinstance(task_input, dict) and len(task_input) > 1:
+            # Split dictionary into smaller dictionaries
+            keys = list(task_input.keys())
+            chunk_size = max(1, len(keys) // self.num_subtasks)
+            chunks = [keys[i:i + chunk_size] for i in range(0, len(keys), chunk_size)]
+            
+            # Create a subtask for each chunk
+            for i, chunk in enumerate(chunks[:self.num_subtasks]):
+                chunk_dict = {k: task_input[k] for k in chunk}
+                subtask = SubTask(
+                    parent_task_name=self.name,
+                    name=f"dict_chunk_{i+1}",
+                    description=f"Process dictionary chunk {i+1} of {len(chunks)}",
+                    input_data=chunk_dict,
+                    depends_on=[]
+                )
+                subtasks.append(subtask)
+                
+        elif isinstance(task_input, str) and len(task_input) > 100:
+            # Split text into chunks (for simple demonstration)
+            chunk_size = max(50, len(task_input) // self.num_subtasks)
+            chunks = [task_input[i:i + chunk_size] for i in range(0, len(task_input), chunk_size)]
+            
+            # Create a subtask for each chunk
+            for i, chunk in enumerate(chunks[:self.num_subtasks]):
+                subtask = SubTask(
+                    parent_task_name=self.name,
+                    name=f"text_chunk_{i+1}",
+                    description=f"Process text chunk {i+1} of {len(chunks)}",
+                    input_data=chunk,
+                    depends_on=[]
+                )
+                subtasks.append(subtask)
+        else:
+            # For other input types, just create sequential subtasks with the same input
+            for i in range(self.num_subtasks):
+                subtask = SubTask(
+                    parent_task_name=self.name,
+                    name=f"subtask_{i+1}",
+                    description=f"Process part {i+1} of the task",
+                    input_data=task_input,
+                    depends_on=[]
+                )
+                subtasks.append(subtask)
+        
+        agent_log(self.name, "subtasks", f"Created {len(subtasks)} subtasks")
+        return subtasks
+    
+    def execute_subtask(self, subtask: Any) -> Any:
+        """Execute a single subtask.
+        
+        Args:
+            subtask: The subtask to execute.
+            
+        Returns:
+            The output from the subtask execution.
+        """
+        agent_log(self.name, "execute_subtask", f"Executing subtask: {subtask.name}")
+        
+        # Get model client if needed
+        model_client = self.get_model_client()
+        
+        # Process the subtask based on its name and content
+        if subtask.name.startswith("chunk_"):
+            # Process a list chunk
+            result = []
+            for item in subtask.input_data:
+                # Apply some processing - for demonstration, just increment numbers
+                if isinstance(item, (int, float)):
+                    result.append(item + 1)
+                else:
+                    result.append(item)
+            return result
+            
+        elif subtask.name.startswith("dict_chunk_"):
+            # Process a dictionary chunk
+            result = {}
+            for key, value in subtask.input_data.items():
+                # Apply some processing - for demonstration, just increment numeric values
+                if isinstance(value, (int, float)):
+                    result[key] = value + 1
+                else:
+                    result[key] = value
+            return result
+            
+        elif subtask.name.startswith("text_chunk_"):
+            # Process a text chunk - for demonstration, just convert to uppercase
+            return subtask.input_data.upper()
+            
+        else:
+            # Default processing
+            if isinstance(subtask.input_data, (int, float)):
+                return subtask.input_data + 1
+            elif isinstance(subtask.input_data, str):
+                return f"Processed: {subtask.input_data}"
+            else:
+                return subtask.input_data
+    
+    def combine_subtask_results(self, subtasks: List[Any], original_input: Any) -> Any:
+        """Combine the results of multiple subtasks.
+        
+        Args:
+            subtasks: The list of subtasks with their results.
+            original_input: The original task input.
+            
+        Returns:
+            The combined output from all subtasks.
+        """
+        agent_log(self.name, "combine", f"Combining results from {len(subtasks)} subtasks")
+        
+        # Extract results from subtasks
+        results = [st.result for st in subtasks]
+        
+        # Combine based on the type of the first result
+        if all(isinstance(r, list) for r in results if r is not None):
+            # Combine lists
+            combined = []
+            for result in results:
+                if result is not None:
+                    combined.extend(result)
+            return combined
+            
+        elif all(isinstance(r, dict) for r in results if r is not None):
+            # Combine dictionaries
+            combined = {}
+            for result in results:
+                if result is not None:
+                    combined.update(result)
+            return combined
+            
+        elif all(isinstance(r, str) for r in results if r is not None):
+            # Combine strings
+            return "".join(r for r in results if r is not None)
+            
+        else:
+            # Default combination - return a dictionary of results
+            combined_result = {}
+            
+            # Include the original input in the combined result
+            if isinstance(original_input, dict):
+                combined_result.update(original_input)
+            
+            # Add each subtask result to the combined result
+            for i, result in enumerate(results):
+                combined_result[f"subtask_{i+1}_result"] = result
+                
+            return combined_result
+    
+    def execute(self, task_input: Any) -> Any:
+        """Execute a task with the given input.
+        
+        For this agent, the base execution is very simple as the
+        main work happens in the subtask execution.
+        
+        Args:
+            task_input: The input to the agent.
+            
+        Returns:
+            The output from the agent.
+        """
+        agent_log(self.name, "execute", f"Preparing to process input with subtasks")
+        
+        # Do any necessary preprocessing
+        # This method will typically be called before subtasks are created
+        
+        # The actual result will come from subtask execution
+        return task_input 

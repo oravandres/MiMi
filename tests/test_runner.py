@@ -36,6 +36,7 @@ class TestTaskRunner:
         mock_task.agent = "test-agent"
         mock_task.output_key = "result"  # Need to set this property
         mock_task.execute.return_value = {"result": 42}
+        mock_task.has_subtasks.return_value = False  # No subtasks
         
         mock_agent = MagicMock(spec=Agent)
         agent_lookup = {"test-agent": mock_agent}
@@ -83,6 +84,7 @@ class TestProjectRunner:
         mock_task1.input_key = ""
         mock_task1.output_key = "result1"
         mock_task1.execute.return_value = {"input": 10, "result1": 11}
+        mock_task1.has_subtasks.return_value = False
         
         mock_task2 = MagicMock(spec=Task)
         mock_task2.name = "task2"
@@ -91,6 +93,7 @@ class TestProjectRunner:
         mock_task2.input_key = "result1"
         mock_task2.output_key = "result2"
         mock_task2.execute.return_value = {"result1": 11, "result2": 22}
+        mock_task2.has_subtasks.return_value = False
         
         # Create mock project
         mock_project = MagicMock(spec=Project)
@@ -130,6 +133,7 @@ class TestProjectRunner:
         mock_task.depends_on = []
         mock_task.input_key = ""
         mock_task.output_key = "result"
+        mock_task.has_subtasks.return_value = False
         
         mock_agent = MagicMock(spec=Agent)
         mock_agent.name = "test-agent"
@@ -152,7 +156,7 @@ class TestProjectRunner:
             result = runner.run({"input": 10})
             
             # Verify TaskRunner was used
-            mock_task_runner_class.assert_called_once_with(mock_task, {"test-agent": mock_agent})
+            mock_task_runner_class.assert_called_once_with(mock_task, {"test-agent": mock_agent}, max_subtask_workers=4)
             
             # The project runner will wrap the input in a dict with the input key
             mock_task_runner.run.assert_called_once()
@@ -169,6 +173,7 @@ class TestProjectRunner:
         mock_task1.input_key = ""
         mock_task1.output_key = "result1"
         mock_task1.execute.return_value = {"result1": 11}
+        mock_task1.has_subtasks.return_value = False
         
         # These tasks both depend only on task1, so can run in parallel
         mock_task2 = MagicMock(spec=Task)
@@ -178,6 +183,7 @@ class TestProjectRunner:
         mock_task2.input_key = "result1"
         mock_task2.output_key = "result2"
         mock_task2.execute.return_value = {"result1": 11, "result2": 22}
+        mock_task2.has_subtasks.return_value = False
         
         mock_task3 = MagicMock(spec=Task)
         mock_task3.name = "task3"
@@ -186,6 +192,7 @@ class TestProjectRunner:
         mock_task3.input_key = "result1"
         mock_task3.output_key = "result3"
         mock_task3.execute.return_value = {"result1": 11, "result3": 33}
+        mock_task3.has_subtasks.return_value = False
         
         # This task depends on both task2 and task3, so must wait for them
         mock_task4 = MagicMock(spec=Task)
@@ -195,6 +202,7 @@ class TestProjectRunner:
         mock_task4.input_key = ""
         mock_task4.output_key = "result4"
         mock_task4.execute.return_value = {"result2": 22, "result3": 33, "result4": 44}
+        mock_task4.has_subtasks.return_value = False
         
         # Create mock agents
         mock_agents = {}

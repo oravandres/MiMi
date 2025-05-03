@@ -97,13 +97,14 @@ def task_log(
     """
     # Skip logging if status is not in allowed types
     if status not in ALLOWED_LOG_TYPES:
+        print(f"Skipping log for task '{task_name}' with status '{status}'")
         return
     
     # Escape curly braces in the message to prevent KeyError in string formatting
     safe_message = str(message).replace("{", "{{").replace("}", "}}")
     
     _logger.info(
-        f"Task '{task_name}' | {status} | {safe_message}",
+        f"Task '{task_name}' | {status} | {safe_message}{'\\n' if status == 'completed' else ''}",
         extra={"task": task_name, "status": status, "data": data or {}},
     )
 

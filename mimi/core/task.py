@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+import uuid
 
 # Add vendor directory to path to find pydantic
 vendor_path = Path(__file__).parent.parent / "vendor"
@@ -90,6 +91,21 @@ def _clean_verification_results(data: Any) -> Any:
     return cleaned
 
 
+class SubTask(BaseModel):
+    """A subtask created when an agent splits a task into smaller units of work."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique identifier for the subtask")
+    parent_task_name: str = Field(..., description="Name of the parent task")
+    name: str = Field(..., description="Name of the subtask")
+    description: str = Field(..., description="Description of what the subtask does")
+    input_data: Any = Field(..., description="Input data for the subtask")
+    depends_on: List[str] = Field(
+        default_factory=list, description="IDs of subtasks this one depends on"
+    )
+    result: Optional[Any] = Field(default=None, description="Result of the subtask execution")
+    duration: Optional[float] = Field(default=None, description="Duration of the subtask execution in seconds")
+
+
 class Task(BaseModel):
     """A task that can be executed by an agent."""
 
@@ -105,7 +121,15 @@ class Task(BaseModel):
     depends_on: List[str] = Field(
         default_factory=list, description="Names of tasks this task depends on"
     )
-
+    parallel_subtasks: bool = Field(
+        default=True, description="Whether to execute subtasks in parallel if agent supports it"
+    )
+    # Internal field to store subtasks during execution
+    subtasks: Dict[str, SubTask] = Field(default_factory=dict)
+    
+    # Pydantic v2 model config
+    model_config = {"arbitrary_types_allowed": True, "protected_namespaces": ()}
+    
     def execute(self, agent_lookup: Dict[str, Any], input_data: Any) -> Any:
         """Execute the task using the specified agent.
         
@@ -161,7 +185,36 @@ class Task(BaseModel):
         else:
             task_input = input_data
         
-        # Execute the task with the agent
+        # Check if agent supports subtask creation
+        if hasattr(agent, "create_subtasks") and callable(agent.create_subtasks) and self.parallel_subtasks:
+            task_log(
+                self.name,
+                "processing",
+                f"Agent '{self.agent}' supports subtask creation. Attempting to split task.",
+            )
+            
+            # Clear any previous subtasks
+            self.subtasks = {}
+            
+            # Ask the agent to create subtasks
+            subtasks = agent.create_subtasks(task_input)
+            
+            if subtasks and isinstance(subtasks, list) and all(isinstance(st, SubTask) for st in subtasks):
+                task_log(
+                    self.name,
+                    "processing",
+                    f"Task split into {len(subtasks)} subtasks",
+                )
+                
+                # Store subtasks
+                for subtask in subtasks:
+                    self.subtasks[subtask.id] = subtask
+                
+                # Execute subtasks (this will be handled by TaskRunner)
+                # The actual parallel execution happens in the runner
+                return self._execute_with_subtasks(agent, task_input)
+        
+        # Regular execution without subtasks
         result = agent.execute(task_input)
         
         # Apply cleaning based on agent type
@@ -193,6 +246,29 @@ class Task(BaseModel):
             )
             return result
 
+    def _execute_with_subtasks(self, agent: Any, task_input: Any) -> Any:
+        """Execute task by running its subtasks.
+        
+        Args:
+            agent: The agent to execute the subtasks.
+            task_input: The original task input.
+            
+        Returns:
+            The combined result from all subtasks.
+        """
+        # This method should be called by the TaskRunner
+        # which will handle parallel execution of subtasks
+        
+        task_log(
+            self.name,
+            "processing",
+            f"Task has {len(self.subtasks)} subtasks to execute",
+        )
+        
+        # Let the agent handle the combining of subtask results
+        # This will be replaced by actual subtask execution in the runner
+        return agent.combine_subtask_results(list(self.subtasks.values()), task_input)
+
     @classmethod
     def from_config(cls, config: Dict[str, Any]) -> "Task":
         """Create a task from a configuration dictionary.
@@ -203,4 +279,20 @@ class Task(BaseModel):
         Returns:
             An initialized Task instance.
         """
-        return cls(**config) 
+        return cls(**config)
+        
+    def get_subtasks(self) -> List[SubTask]:
+        """Get the list of subtasks for this task.
+        
+        Returns:
+            List of subtasks.
+        """
+        return list(self.subtasks.values())
+        
+    def has_subtasks(self) -> bool:
+        """Check if the task has subtasks.
+        
+        Returns:
+            True if the task has subtasks, False otherwise.
+        """
+        return len(self.subtasks) > 0 
