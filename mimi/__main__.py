@@ -21,9 +21,9 @@ def parse_args():
     )
     
     parser.add_argument(
-        "-i", "--input", 
+        "-d", "--description", 
         required=True,
-        help="Input value for the project"
+        help="Project description input"
     )
     
     parser.add_argument(
@@ -55,8 +55,8 @@ def parse_args():
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=3,
-        help="Maximum number of parallel workers (default: 3)"
+        default=4,
+        help="Maximum number of parallel workers (default: 4)"
     )
     
     return parser.parse_args()
@@ -91,6 +91,16 @@ def main():
         
         # Load the project from the specified config directory
         config_dir = Path(args.config)
+        
+        # If config_dir doesn't contain a project.yaml file, try appending "/config"
+        if not (config_dir / "project.yaml").exists():
+            config_dir = config_dir / "config"
+            
+            # Check if the config directory exists
+            if not config_dir.exists() or not (config_dir / "project.yaml").exists():
+                print(f"Error: Could not find project.yaml in {config_dir}. Please check the config path.")
+                return 1
+        
         project = Project.from_config(config_dir)
         
         # Create a project runner
@@ -105,7 +115,7 @@ def main():
         
         # Run the project
         try:
-            result = runner.run({"input": args.input})
+            result = runner.run({"input": args.description})
             
             # Print the result
             print("\nResults:")

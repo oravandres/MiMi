@@ -36,25 +36,27 @@ class TestTaskSplitterAgent:
     def test_agent_creation(self) -> None:
         """Test creating a TaskSplitterAgent."""
         agent = TaskSplitterAgent(
-            name="splitter",
-            role="task_splitter",
-            description="Agent that splits tasks",
+            name="test-splitter",
+            role="task-splitter",
+            description="An agent that splits tasks into subtasks",
             model_name="test-model",
+            system_prompt="You are a specialized agent that divides complex tasks into smaller units for parallel processing.",
             num_subtasks=3
         )
         
-        assert agent.name == "splitter"
-        assert agent.role == "task_splitter"
+        assert agent.name == "test-splitter"
+        assert agent.role == "task-splitter"
         assert agent.supports_subtasks is True
         assert agent.num_subtasks == 3
     
     def test_create_subtasks_with_list(self) -> None:
         """Test creating subtasks from a list input."""
         agent = TaskSplitterAgent(
-            name="splitter",
-            role="task_splitter",
-            description="Agent that splits tasks",
+            name="test-splitter",
+            role="task-splitter",
+            description="An agent that splits tasks into subtasks",
             model_name="test-model",
+            system_prompt="You are a specialized agent that divides complex tasks into smaller units for parallel processing.",
             num_subtasks=2
         )
         
@@ -70,10 +72,11 @@ class TestTaskSplitterAgent:
     def test_create_subtasks_with_dict(self) -> None:
         """Test creating subtasks from a dictionary input."""
         agent = TaskSplitterAgent(
-            name="splitter",
-            role="task_splitter",
-            description="Agent that splits tasks",
+            name="test-splitter",
+            role="task-splitter",
+            description="An agent that splits tasks into subtasks",
             model_name="test-model",
+            system_prompt="You are a specialized agent that divides complex tasks into smaller units for parallel processing.",
             num_subtasks=2
         )
         
@@ -95,10 +98,11 @@ class TestTaskSplitterAgent:
     def test_execute_subtask(self) -> None:
         """Test executing a subtask."""
         agent = TaskSplitterAgent(
-            name="splitter",
-            role="task_splitter",
-            description="Agent that splits tasks",
+            name="test-splitter",
+            role="task-splitter",
+            description="An agent that splits tasks into subtasks",
             model_name="test-model",
+            system_prompt="You are a specialized agent that divides complex tasks into smaller units for parallel processing.",
         )
         
         # Mock the model client initialization
@@ -122,10 +126,11 @@ class TestTaskSplitterAgent:
     def test_combine_subtask_results(self) -> None:
         """Test combining subtask results."""
         agent = TaskSplitterAgent(
-            name="splitter",
-            role="task_splitter",
-            description="Agent that splits tasks",
+            name="test-splitter",
+            role="task-splitter",
+            description="An agent that splits tasks into subtasks",
             model_name="test-model",
+            system_prompt="You are a specialized agent that divides complex tasks into smaller units for parallel processing.",
         )
         
         # Create subtasks with results
@@ -162,14 +167,14 @@ class TestTaskWithSubtasks:
         """Test a task that creates and executes subtasks."""
         # Create a mock agent that supports subtasks
         mock_agent = MagicMock(spec=TaskSplitterAgent)
-        mock_agent.name = "splitter"
+        mock_agent.name = "test-splitter"
         mock_agent.supports_subtasks = True
         
         # Create a task
         task = Task(
             name="test_task",
             description="Test task",
-            agent="splitter",
+            agent="test-splitter",
             parallel_subtasks=True
         )
         
@@ -203,7 +208,7 @@ class TestTaskWithSubtasks:
         mock_agent.combine_subtask_results.return_value = {"combined": True, "parts": [1, 2]}
         
         # Execute the task
-        agent_lookup = {"splitter": mock_agent}
+        agent_lookup = {"test-splitter": mock_agent}
         
         # Create the task runner
         runner = TaskRunner(task, agent_lookup)
@@ -232,13 +237,13 @@ class TestParallelSubtaskExecution:
         """Test executing subtasks in parallel."""
         # Create a mock agent
         mock_agent = MagicMock(spec=TaskSplitterAgent)
-        mock_agent.name = "splitter"
+        mock_agent.name = "test-splitter"
         
         # Create a task
         task = Task(
             name="test_task",
             description="Test task",
-            agent="splitter",
+            agent="test-splitter",
             parallel_subtasks=True
         )
         
@@ -276,7 +281,7 @@ class TestParallelSubtaskExecution:
         mock_agent.combine_subtask_results.return_value = {"combined": True, "parts": [1, 2]}
         
         # Create the task runner
-        agent_lookup = {"splitter": mock_agent}
+        agent_lookup = {"test-splitter": mock_agent}
         runner = TaskRunner(task, agent_lookup)
         
         # Execute the subtasks (no need to mock ThreadPoolExecutor for this test)
@@ -296,13 +301,13 @@ class TestParallelSubtaskExecution:
         """Test executing subtasks with dependencies."""
         # Create a mock agent
         mock_agent = MagicMock(spec=TaskSplitterAgent)
-        mock_agent.name = "splitter"
+        mock_agent.name = "test-splitter"
         
         # Create a task
         task = Task(
             name="test_task",
             description="Test task",
-            agent="splitter",
+            agent="test-splitter",
             parallel_subtasks=True
         )
         
@@ -354,7 +359,7 @@ class TestParallelSubtaskExecution:
         mock_agent.combine_subtask_results.return_value = {"combined": True, "parts": [1, 2, 3]}
         
         # Create the task runner
-        agent_lookup = {"splitter": mock_agent}
+        agent_lookup = {"test-splitter": mock_agent}
         runner = TaskRunner(task, agent_lookup)
         
         # Execute the subtasks

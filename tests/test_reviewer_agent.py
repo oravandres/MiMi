@@ -7,7 +7,7 @@ import tempfile
 import shutil
 import os
 
-from mimi.core.software_agents import ReviewerAgent
+from mimi.core.agents import ReviewerAgent
 from mimi.core.agent import Agent
 
 
@@ -22,7 +22,7 @@ class TestReviewerAgent(unittest.TestCase):
         (self.project_dir / "docs").mkdir(exist_ok=True)
         
         # Mock the get_project_directory function to return our test directory
-        self.patcher = patch("mimi.core.software_agents.get_project_directory", 
+        self.patcher = patch("mimi.core.agents.reviewer_agent.get_project_directory", 
                              return_value=self.project_dir)
         self.mock_get_project_dir = self.patcher.start()
         
@@ -33,9 +33,10 @@ class TestReviewerAgent(unittest.TestCase):
         # Create the agent and patch the get_model_client method
         self.agent = ReviewerAgent(
             name="test-reviewer",
-            role="Test Reviewer",
-            description="A test reviewer agent for unit tests",
+            role="reviewer",
+            description="A code reviewer agent",
             model_name="test-model",
+            system_prompt="You are a code reviewer that provides helpful feedback on code quality.",
             model_provider="test-provider"
         )
         

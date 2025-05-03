@@ -38,4 +38,9 @@ dev = [
 
 [project.urls]
 "Homepage" = "https://github.com/yourusername/MiMi"
-"Bug Tracker" = "https://github.com/yourusername/MiMi/issues" 
+"Bug Tracker" = "https://github.com/yourusername/MiMi/issues"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+] 

@@ -112,8 +112,8 @@ class Task(BaseModel):
     name: str = Field(..., description="Unique name of the task")
     description: str = Field(..., description="Description of what the task does")
     agent: str = Field(..., description="Name of the agent that will execute this task")
-    input_key: Optional[str] = Field(
-        None, description="Key to extract input from project data (if None, use all data)"
+    input_key: Optional[Union[str, List[str]]] = Field(
+        None, description="Key(s) to extract input from project data (if None, use all data)"
     )
     output_key: Optional[str] = Field(
         None, description="Key to store output in project data (if None, return as is)"
@@ -123,6 +123,10 @@ class Task(BaseModel):
     )
     parallel_subtasks: bool = Field(
         default=True, description="Whether to execute subtasks in parallel if agent supports it"
+    )
+    # Additional field for sub-project tracking
+    sub_project: Optional[str] = Field(
+        None, description="Name of the sub-project this task belongs to"
     )
     # Internal field to store subtasks during execution
     subtasks: Dict[str, SubTask] = Field(default_factory=dict)
@@ -168,20 +172,48 @@ class Task(BaseModel):
                 )
                 input_data = _clean_verification_results(input_data)
         
-        # Extract the specific input if input_key is provided
+        # Extract the specific input based on input_key (string or list)
         if self.input_key and isinstance(input_data, dict):
-            if self.input_key in input_data:
-                task_input = input_data[self.input_key]
-                task_log(
-                    self.name,
-                    "processing",
-                    f"Using input from key '{self.input_key}'",
-                    data={"extracted_input": task_input},
-                )
+            if isinstance(self.input_key, str):
+                # Single input key
+                if self.input_key in input_data:
+                    task_input = input_data[self.input_key]
+                    task_log(
+                        self.name,
+                        "processing",
+                        f"Using input from key '{self.input_key}'",
+                        data={"extracted_input": task_input},
+                    )
+                else:
+                    warning_msg = f"Input key '{self.input_key}' not found in data, using full input"
+                    task_log(self.name, "warning", warning_msg)
+                    task_input = input_data
             else:
-                warning_msg = f"Input key '{self.input_key}' not found in data, using full input"
-                task_log(self.name, "warning", warning_msg)
-                task_input = input_data
+                # Multiple input keys (list)
+                collected_inputs = {}
+                missing_keys = []
+                
+                for key in self.input_key:
+                    if key in input_data:
+                        collected_inputs[key] = input_data[key]
+                    else:
+                        missing_keys.append(key)
+                
+                if missing_keys:
+                    warning_msg = f"Some input keys not found in data: {missing_keys}"
+                    task_log(self.name, "warning", warning_msg)
+                
+                if not collected_inputs:
+                    warning_msg = "None of the specified input keys found in data, using full input"
+                    task_log(self.name, "warning", warning_msg)
+                    task_input = input_data
+                else:
+                    task_log(
+                        self.name,
+                        "processing",
+                        f"Using input from keys: {list(collected_inputs.keys())}",
+                    )
+                    task_input = collected_inputs
         else:
             task_input = input_data
         

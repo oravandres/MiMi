@@ -26,9 +26,10 @@ def main():
     agent = TaskSplitterAgent(
         name="splitter",
         role="task_splitter",
-        description="Agent that splits tasks into smaller subtasks",
-        model_name="llama3",  # This is just a placeholder, no actual model is used in this demo
-        num_subtasks=4  # Split tasks into 4 subtasks
+        description="Agent that splits tasks into subtasks",
+        model_name="llama3",
+        system_prompt="You are a specialized agent that divides complex tasks into smaller units for parallel processing.",
+        num_subtasks=4
     )
     
     # Create a task that will use the agent

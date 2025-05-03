@@ -20,7 +20,7 @@ def run_sample_project(input_value: float = 5.0) -> None:
         input_value: The input number to process.
     """
     # Setup logger with more detailed output
-    setup_logger(log_level="INFO")
+    setup_logger(log_level="DEBUG")
     
     # Get the project directory
     project_dir = Path(__file__).parent.parent / "projects" / "sample" / "config"

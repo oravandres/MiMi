@@ -12,8 +12,16 @@ if vendor_path.exists() and str(vendor_path) not in sys.path:
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from mimi.core.agent import Agent, AnalystAgent, FeedbackProcessorAgent
-from mimi.core.software_agents import ResearchAnalystAgent, ArchitectAgent, SoftwareEngineerAgent, QAEngineerAgent, ReviewerAgent
+from mimi.core.agents import (
+    Agent, 
+    AnalystAgent, 
+    FeedbackProcessorAgent, 
+    ResearchAnalystAgent, 
+    ArchitectAgent,
+    SoftwareEngineerAgent,
+    QAEngineerAgent,
+    ReviewerAgent
+)
 from mimi.core.task import Task
 from mimi.utils.config import load_project_config
 from mimi.utils.logger import logger, project_log
@@ -137,11 +145,12 @@ class Project(BaseModel):
         config = load_project_config(config_dir)
         
         # Extract project metadata
-        agents_config = config["agents"]
-        tasks_config = config["tasks"]
+        project_config = config.get("project", {})
+        agents_config = config.get("agents", {})
+        tasks_config = config.get("tasks", {})
         
-        project_name = agents_config.get("project_name", "MiMi Project")
-        project_desc = agents_config.get(
+        project_name = project_config.get("project_name", "MiMi Project")
+        project_desc = project_config.get(
             "project_description", "A multi-agent project"
         )
         
@@ -169,12 +178,21 @@ class Project(BaseModel):
                 agent = ResearchAnalystAgent.from_config(agent_config)
             elif agent_type.lower() == "architect":
                 agent = ArchitectAgent.from_config(agent_config)
-            elif agent_type.lower() == "software_engineer":
+            elif agent_type.lower() == "software_engineer" or agent_type.lower() == "developer":
                 agent = SoftwareEngineerAgent.from_config(agent_config)
             elif agent_type.lower() == "qa_engineer":
                 agent = QAEngineerAgent.from_config(agent_config)
             elif agent_type.lower() == "reviewer":
                 agent = ReviewerAgent.from_config(agent_config)
+            elif agent_type.lower() == "writer":
+                # Map writer type to agent
+                agent = Agent.from_config(agent_config)
+            elif agent_type.lower() == "designer":
+                # Map designer type to agent
+                agent = Agent.from_config(agent_config)
+            elif agent_type.lower() == "engineer":
+                # Map general engineer type to agent
+                agent = Agent.from_config(agent_config)
             else:
                 # Default agent type
                 agent = Agent.from_config(agent_config)
@@ -186,6 +204,15 @@ class Project(BaseModel):
             task_name = task_config.get("name", "")
             task = Task.from_config(task_config)
             project.tasks[task_name] = task
+            
+        # Log sub-project information if available
+        if "sub_projects" in project_config:
+            sub_projects = project_config.get("sub_projects", [])
+            project_log(
+                project_name,
+                "initialize",
+                f"Project contains {len(sub_projects)} sub-projects"
+            )
             
         # Validate task dependencies but don't initialize agents yet
         # The main.py will call initialize() separately

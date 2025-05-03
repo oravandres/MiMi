@@ -6,6 +6,45 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+import sys
+
+# Used to track the current project directory across multiple agents
+_current_project_dir: Optional[Path] = None
+# File to store the current project directory path for persistence across processes
+_STATE_FILE = Path("./Software/.current_project")
+
+def _load_current_project_dir() -> Optional[Path]:
+    """Load the current project directory from the state file if it exists."""
+    global _current_project_dir
+    
+    if _STATE_FILE.exists():
+        try:
+            with open(_STATE_FILE, 'r') as f:
+                project_dir_str = f.read().strip()
+                if project_dir_str and Path(project_dir_str).exists():
+                    _current_project_dir = Path(project_dir_str)
+                    return _current_project_dir
+        except Exception:
+            # If there's any error reading the state file, just continue
+            pass
+    
+    return None
+
+def _save_current_project_dir(project_dir: Path) -> None:
+    """Save the current project directory to the state file."""
+    global _current_project_dir
+    _current_project_dir = project_dir
+    
+    try:
+        # Create parent directory if it doesn't exist
+        _STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write the project directory path to the state file
+        with open(_STATE_FILE, 'w') as f:
+            f.write(str(project_dir))
+    except Exception:
+        # If there's any error writing the state file, just continue
+        pass
 
 def sanitize_filename(name: str) -> str:
     """Sanitize a string to be used as a filename.
@@ -152,6 +191,16 @@ def create_output_directory(project_title: str) -> Path:
     Returns:
         The path to the created directory.
     """
+    global _current_project_dir
+    
+    # Try to load the current project directory from the state file if not set already
+    if _current_project_dir is None:
+        _load_current_project_dir()
+    
+    # If we already have a project directory for this session, return it
+    if _current_project_dir is not None and _current_project_dir.exists():
+        return _current_project_dir
+    
     # Create base directory if it doesn't exist
     base_dir = Path("./Software")
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -159,6 +208,48 @@ def create_output_directory(project_title: str) -> Path:
     # Create a timestamp and sanitized project title
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     sanitized_title = sanitize_filename(project_title)
+    
+    # Check if this is an "unknown" project type
+    is_unknown_project = sanitized_title in ["unknown_project", "unknown", "software_project", "project"]
+    
+    # First check if a directory with this exact timestamp already exists
+    existing_dirs = list(base_dir.glob(f"{timestamp}_*"))
+    if existing_dirs:
+        # If we're trying to create an "unknown" project, but a non-unknown project
+        # already exists with the same timestamp, use that instead
+        if is_unknown_project:
+            for existing_dir in existing_dirs:
+                # Skip directories that also have generic names
+                if not any(unknown_name in existing_dir.name for unknown_name in 
+                          ["unknown_project", "unknown", "software_project", "project"]):
+                    _save_current_project_dir(existing_dir)
+                    return _current_project_dir
+        
+        # Otherwise, just use the first existing directory with this timestamp
+        _save_current_project_dir(existing_dirs[0])
+        return _current_project_dir
+    
+    # If we're dealing with an unknown project, look for projects created within 5 seconds
+    if is_unknown_project:
+        # Extract the timestamp without seconds to look within the same minute
+        timestamp_prefix = timestamp[:-2]  # Remove the seconds part
+        broader_existing_dirs = list(base_dir.glob(f"{timestamp_prefix}*"))
+        
+        # Filter to only include directories created within 5 seconds
+        for existing_dir in broader_existing_dirs:
+            dir_timestamp = existing_dir.name.split('_')[0]
+            # Only consider if the directory has a timestamp format
+            if len(dir_timestamp) == 14 and dir_timestamp.isdigit():
+                # Get seconds from the timestamp (last 2 digits)
+                existing_seconds = int(dir_timestamp[-2:])
+                current_seconds = int(timestamp[-2:])
+                time_diff = abs(existing_seconds - current_seconds)
+                
+                # Within 5 seconds and not another unknown project
+                if time_diff <= 5 and not any(unknown_name in existing_dir.name for unknown_name in 
+                                             ["unknown_project", "unknown", "software_project", "project"]):
+                    _save_current_project_dir(existing_dir)
+                    return _current_project_dir
     
     # Create a unique directory name with timestamp and project title
     project_dir_name = f"{timestamp}_{sanitized_title}"
@@ -175,6 +266,9 @@ def create_output_directory(project_title: str) -> Path:
     (project_dir / "public").mkdir(exist_ok=True)
     (project_dir / "docs").mkdir(exist_ok=True)
     (project_dir / "tests").mkdir(exist_ok=True)
+    
+    # Save the current project directory
+    _save_current_project_dir(project_dir)
     
     return project_dir
 

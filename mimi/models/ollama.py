@@ -47,8 +47,8 @@ class OllamaClient:
     def generate(
         self, 
         prompt: str, 
-        system_prompt: Optional[str] = None,
-        max_tokens: Optional[int] = None,
+        system_prompt: str,
+        max_tokens: Optional[int] = 8192,
     ) -> str:
         """Generate a response from the model.
         
@@ -143,7 +143,7 @@ class OllamaClient:
 def get_ollama_client(
     model_name: str,
     base_url: str = "http://localhost:11434",
-    temperature: float = 0.7,
+    temperature: float = 0.1,
     suppress_log: bool = False,
     stream: bool = False,
 ) -> OllamaClient:

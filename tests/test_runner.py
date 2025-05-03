@@ -124,7 +124,8 @@ class TestProjectRunner:
         assert "duration" in runner.results["task1"]
         assert "duration" in runner.results["task2"]
 
-    def test_project_runner_uses_task_runner(self) -> None:
+    @patch("mimi.core.runner.TaskRunner")
+    def test_project_runner_uses_task_runner(self, mock_task_runner_class) -> None:
         """Test that ProjectRunner uses TaskRunner."""
         # Create mock task and agent
         mock_task = MagicMock(spec=Task)
@@ -146,22 +147,21 @@ class TestProjectRunner:
         mock_project.get_execution_order.return_value = ["test-task"]
         
         # Mock TaskRunner
-        with patch("mimi.core.runner.TaskRunner") as mock_task_runner_class:
-            mock_task_runner = MagicMock()
-            mock_task_runner.run.return_value = {"result": 42}
-            mock_task_runner_class.return_value = mock_task_runner
-            
-            # Create and run the project runner
-            runner = ProjectRunner(mock_project)
-            result = runner.run({"input": 10})
-            
-            # Verify TaskRunner was used
-            mock_task_runner_class.assert_called_once_with(mock_task, {"test-agent": mock_agent}, max_subtask_workers=4)
-            
-            # The project runner will wrap the input in a dict with the input key
-            mock_task_runner.run.assert_called_once()
-            call_args = mock_task_runner.run.call_args[0][0]
-            assert "input" in call_args
+        mock_task_runner = MagicMock()
+        mock_task_runner.run.return_value = {"result": 42}
+        mock_task_runner_class.return_value = mock_task_runner
+        
+        # Create and run the project runner
+        runner = ProjectRunner(mock_project)
+        result = runner.run({"input": 10})
+        
+        # Verify TaskRunner was used
+        mock_task_runner_class.assert_called_once_with(mock_task, {"test-agent": mock_agent}, max_subtask_workers=4)
+        
+        # The project runner will wrap the input in a dict with the input key
+        mock_task_runner.run.assert_called_once()
+        call_args = mock_task_runner.run.call_args[0][0]
+        assert "input" in call_args
 
     def test_parallel_execution(self) -> None:
         """Test parallel execution of tasks."""

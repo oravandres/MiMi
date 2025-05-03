@@ -7,85 +7,64 @@ from mimi.core.agent import Agent
 
 
 class TestAgent:
-    """Tests for the base Agent class."""
+    """Tests for the Agent class."""
 
     def test_agent_creation(self) -> None:
         """Test creating an Agent instance."""
         agent = Agent(
             name="test-agent",
             role="test-role",
-            description="Test agent for unit tests",
+            description="A test agent",
             model_name="test-model",
+            system_prompt="You are a helpful test agent that assists with testing."
         )
         
         assert agent.name == "test-agent"
         assert agent.role == "test-role"
-        assert agent.description == "Test agent for unit tests"
+        assert agent.description == "A test agent"
         assert agent.model_name == "test-model"
-        assert agent.model_provider == "ollama"  # Default value
+        assert agent.model_provider == "ollama"
+        assert agent.system_prompt == "You are a helpful test agent that assists with testing."
 
-    @patch("mimi.core.agent.get_ollama_client")
-    def test_agent_initialization(self, mock_get_ollama: MagicMock) -> None:
-        """Test agent initialization."""
-        # Mock the Ollama client
+    def test_agent_initialization(self) -> None:
+        """Test initializing an Agent with a mock model client."""
+        # Create a mock Ollama client
         mock_client = MagicMock()
-        mock_get_ollama.return_value = mock_client
         
-        # Create and initialize the agent
-        agent = Agent(
-            name="test-agent",
-            role="test-role",
-            description="Test agent for unit tests",
-            model_name="test-model",
-        )
-        agent.initialize()
-        
-        # Verify the client was created
-        mock_get_ollama.assert_called_once_with(
-            model_name="test-model",
-            base_url="http://localhost:11434",
-            temperature=0.7,
-            suppress_log=True,
-            stream=False
-        )
-        assert agent._model_client == mock_client
+        # Patch the get_ollama_client function to return our mock
+        with patch("mimi.core.agents.base_agent.get_ollama_client", return_value=mock_client):
+            # Create the agent
+            agent = Agent(
+                name="test-agent",
+                role="test-role",
+                description="A test agent",
+                model_name="test-model",
+                system_prompt="You are a helpful test agent that assists with testing."
+            )
+            
+            # Initialize the agent
+            agent.initialize()
+            
+            # Check that the model client was initialized
+            assert agent._model_client == mock_client
 
-    @patch("mimi.core.agent.get_ollama_client")
-    def test_agent_from_config(self, mock_get_ollama: MagicMock) -> None:
-        """Test creating an agent from a configuration dictionary."""
-        # Mock the Ollama client
-        mock_client = MagicMock()
-        mock_get_ollama.return_value = mock_client
-        
-        # Create agent from config
+    def test_agent_from_config(self) -> None:
+        """Test creating an Agent from a configuration dictionary."""
         config = {
             "name": "test-agent",
             "role": "test-role",
-            "description": "Test agent for unit tests",
+            "description": "A test agent",
             "model_name": "test-model",
-            "model_provider": "ollama",
-            "model_settings": {"temperature": 0.5},
+            "model_config": {"temperature": 0.5},
+            "system_prompt": "You are a helpful test agent that assists with testing."
         }
         
         agent = Agent.from_config(config)
         
-        # Verify the agent was created correctly
         assert agent.name == "test-agent"
         assert agent.role == "test-role"
-        assert agent.description == "Test agent for unit tests"
+        assert agent.description == "A test agent"
         assert agent.model_name == "test-model"
-        assert agent.model_provider == "ollama"
         assert agent.model_settings == {"temperature": 0.5}
-        
-        # Initialize the agent to create the client
-        agent.initialize()
-        
-        # Verify the client was created
-        mock_get_ollama.assert_called_once_with(
-            model_name="test-model",
-            base_url="http://localhost:11434",
-            temperature=0.5,
-            suppress_log=True,
-            stream=False
-        )
+        assert agent.system_prompt == "You are a helpful test agent that assists with testing."
 

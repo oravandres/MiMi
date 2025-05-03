@@ -54,7 +54,7 @@ def load_yaml_config(file_path: Union[str, Path]) -> Dict[str, Any]:
 def load_project_config(config_dir: Union[str, Path]) -> Dict[str, Any]:
     """Load a complete project configuration from a directory.
     
-    Expects 'agents.yaml' and 'tasks.yaml' in the config directory.
+    Expects 'project.yaml' in the config directory.
     
     Args:
         config_dir: Directory containing configuration files.
@@ -63,15 +63,31 @@ def load_project_config(config_dir: Union[str, Path]) -> Dict[str, Any]:
         Dict containing the complete project configuration.
         
     Raises:
-        ConfigLoadError: If any required file cannot be loaded.
+        ConfigLoadError: If the project file cannot be loaded.
     """
     config_path = Path(config_dir)
     
     try:
-        agents_config = load_yaml_config(config_path / "agents.yaml")
-        tasks_config = load_yaml_config(config_path / "tasks.yaml")
+        # Load the project configuration from project.yaml
+        project_config = load_yaml_config(config_path / "project.yaml")
         
+        # Extract agents from the project config
+        agents_config = {"agents": project_config.get("agents", [])}
+        
+        # Extract tasks from each sub-project
+        all_tasks = []
+        for sub_project in project_config.get("sub_projects", []):
+            tasks = sub_project.get("tasks", [])
+            # Annotate tasks with their sub-project
+            for task in tasks:
+                task["sub_project"] = sub_project.get("name")
+            all_tasks.extend(tasks)
+        
+        tasks_config = {"tasks": all_tasks}
+        
+        # Return a structure similar to the old format for compatibility
         return {
+            "project": project_config,
             "agents": agents_config,
             "tasks": tasks_config,
         }

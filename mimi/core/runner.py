@@ -43,7 +43,7 @@ class TaskRunner:
         task_log(
             self.task.name,
             "started",
-            f"Executing task with agent '{self.task.agent}'",
+            f"Runner executing task with agent '{self.task.agent}'",
         )
         
         # Execute the task, which may create subtasks
@@ -393,8 +393,25 @@ class ProjectRunner:
                             
                             # If no matching output key found, use the input directly
                             if not found_input:
-                                if task.input_key in input_data:
-                                    task_input = input_data[task.input_key]
+                                if isinstance(task.input_key, str):
+                                    # Handle single input key
+                                    if task.input_key in input_data:
+                                        task_input = input_data[task.input_key]
+                                    else:
+                                        # Fall back to using the entire results object
+                                        task_input = {k: v["data"] for k, v in self.results.items() if "data" in v}
+                                elif isinstance(task.input_key, list):
+                                    # Handle list of input keys
+                                    collected_inputs = {}
+                                    for key in task.input_key:
+                                        if key in input_data:
+                                            collected_inputs[key] = input_data[key]
+                                    
+                                    if collected_inputs:
+                                        task_input = collected_inputs
+                                    else:
+                                        # Fall back to using the entire results object
+                                        task_input = {k: v["data"] for k, v in self.results.items() if "data" in v}
                                 else:
                                     # Fall back to using the entire results object
                                     task_input = {k: v["data"] for k, v in self.results.items() if "data" in v}

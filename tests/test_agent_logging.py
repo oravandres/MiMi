@@ -105,10 +105,10 @@ class TestAgentLogging(unittest.TestCase):
         # Create a test agent
         agent = Agent(
             name="test-agent",
-            role="tester",
-            description="Test agent for logging",
+            role="test-role",
+            description="A test agent",
             model_name="test-model",
-            model_provider="test"
+            system_prompt="You are a helpful test agent that assists with testing."
         )
         
         # Create a custom mock function that just remembers what was passed to it
@@ -119,7 +119,7 @@ class TestAgentLogging(unittest.TestCase):
             return Path(self.test_dir) / "logs" / "mock_agent.log.md"
         
         # Patch the function in the module
-        with patch('mimi.utils.output_manager.create_or_update_agent_log', 
+        with patch('mimi.core.agents.base_agent.create_or_update_agent_log',
                   side_effect=mock_create_or_update_agent_log):
             # Call the method
             agent.log_to_agent_file(
@@ -132,26 +132,26 @@ class TestAgentLogging(unittest.TestCase):
             
             # Check that our mock function was called correctly
             self.assertEqual(len(call_args_list), 1)
-            args, kwargs = call_args_list[0]
             
-            # Check the kwargs only, since log_to_agent_file calls it with kwargs
-            self.assertEqual(str(kwargs["project_dir"]), self.test_dir)
+            # Check the arguments
+            _, kwargs = call_args_list[0]
+            self.assertEqual(kwargs["project_dir"], Path(self.test_dir))
             self.assertEqual(kwargs["agent_name"], "test-agent")
             self.assertEqual(kwargs["action_type"], "test-action")
             self.assertEqual(kwargs["input_summary"], "Test input")
             self.assertEqual(kwargs["output_summary"], "Test output")
-            self.assertIn("test_key", kwargs["details"])
             self.assertEqual(kwargs["details"]["test_key"], "test_value")
+            self.assertEqual(kwargs["details"]["agent_role"], "test-role")
 
     def test_agent_log_with_complex_input(self):
         """Test the Agent.log_to_agent_file method with complex input."""
         # Create a test agent
         agent = Agent(
             name="test-agent",
-            role="tester",
-            description="Test agent for logging",
+            role="test-role",
+            description="A test agent",
             model_name="test-model",
-            model_provider="test"
+            system_prompt="You are a helpful test agent that assists with testing."
         )
         
         # Create a custom mock function that converts the complex input to a string
@@ -165,7 +165,7 @@ class TestAgentLogging(unittest.TestCase):
             return Path(self.test_dir) / "logs" / "mock_agent.log.md"
         
         # Patch the function in the module
-        with patch('mimi.utils.output_manager.create_or_update_agent_log', 
+        with patch('mimi.core.agents.base_agent.create_or_update_agent_log',
                   side_effect=mock_create_or_update_agent_log):
             # Call the method with a dict input
             complex_input = {"key1": "value1", "key2": "value2"}
@@ -178,20 +178,14 @@ class TestAgentLogging(unittest.TestCase):
             
             # Verify the result
             self.assertEqual(len(call_args_list), 1)
-            args, kwargs = call_args_list[0]
             
-            # The input should be converted to a string automatically
-            self.assertEqual(str(kwargs["project_dir"]), self.test_dir)
+            # Check that the complex input was converted properly
+            _, kwargs = call_args_list[0]
+            self.assertEqual(kwargs["project_dir"], Path(self.test_dir))
             self.assertEqual(kwargs["agent_name"], "test-agent")
             self.assertEqual(kwargs["action_type"], "test-action")
-            self.assertIsInstance(kwargs["input_summary"], str)
+            self.assertEqual(kwargs["input_summary"], str(complex_input))
             self.assertEqual(kwargs["output_summary"], "Test output")
-            
-            # Verify key1 and key2 appear in the string representation
-            self.assertIn("key1", kwargs["input_summary"])
-            self.assertIn("value1", kwargs["input_summary"])
-            self.assertIn("key2", kwargs["input_summary"])
-            self.assertIn("value2", kwargs["input_summary"])
 
 if __name__ == "__main__":
     unittest.main() 

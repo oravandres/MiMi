@@ -45,7 +45,7 @@ def setup_logger(
     _logger.add(
         sys.stderr,
         level=log_level,
-        format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}",
+        format="{level} {time:YYYY-MM-DD HH:mm:ss} | {message}",
     )
     
     # Add file handler if specified
@@ -53,7 +53,7 @@ def setup_logger(
         _logger.add(
             log_file,
             level=log_level,
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {name}:{function}:{line} | {message}",
+            format="{level} | {time:YYYY-MM-DD HH:mm:ss} | {message}",
             rotation=rotation,
             retention=retention,
         )
@@ -72,8 +72,9 @@ def agent_log(
         data: Optional additional data to log.
     """
     # Skip logging if action is not in allowed types
-    if action not in ALLOWED_LOG_TYPES:
-        return
+    # if action not in ALLOWED_LOG_TYPES:
+    #     print(f"Skipping log for agent '{agent_name}' with action '{action}'")
+    #     return
     
     # Escape curly braces in the message to prevent KeyError in string formatting
     safe_message = str(message).replace("{", "{{").replace("}", "}}")
@@ -96,15 +97,16 @@ def task_log(
         data: Optional additional data to log.
     """
     # Skip logging if status is not in allowed types
-    if status not in ALLOWED_LOG_TYPES:
-        print(f"Skipping log for task '{task_name}' with status '{status}'")
-        return
+    # if status not in ALLOWED_LOG_TYPES:
+    #    print(f"Skipping log for task '{task_name}' with status '{status}'")
+    #    return
     
     # Escape curly braces in the message to prevent KeyError in string formatting
     safe_message = str(message).replace("{", "{{").replace("}", "}}")
-    
+    new_line = ("\n" + "=" * 150 + "\n") if status == 'completed' else ''
+
     _logger.info(
-        f"Task '{task_name}' | {status} | {safe_message}{'\\n' if status == 'completed' else ''}",
+        f"Task '{task_name}' | {status} | {safe_message}{new_line}",
         extra={"task": task_name, "status": status, "data": data or {}},
     )
 
@@ -121,8 +123,8 @@ def project_log(
         data: Optional additional data to log.
     """
     # Skip logging if status is not in allowed types
-    if status not in ALLOWED_LOG_TYPES:
-        return
+    # if status not in ALLOWED_LOG_TYPES:
+    #    return
     
     # Escape curly braces in the message to prevent KeyError in string formatting
     safe_message = str(message).replace("{", "{{").replace("}", "}}")

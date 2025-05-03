@@ -269,16 +269,15 @@ class TestProject:
     @patch("mimi.core.project.Task.from_config")
     def test_from_config(
         self,
-        mock_task_from_config: MagicMock,
-        mock_reviewer_from_config: MagicMock,
-        mock_qa_from_config: MagicMock,
-        mock_engineer_from_config: MagicMock,
-        mock_architect_from_config: MagicMock,
-        mock_analyst_from_config: MagicMock,
-        mock_number_adder_from_config: MagicMock,
-        mock_analyst_agent_from_config: MagicMock,
-        mock_agent_from_config: MagicMock,
-        mock_load_config: MagicMock,
+        mock_task_from_config,
+        mock_reviewer_from_config,
+        mock_qa_from_config,
+        mock_engineer_from_config,
+        mock_architect_from_config,
+        mock_research_analyst_from_config,
+        mock_analyst_from_config,
+        mock_agent_from_config,
+        mock_load_config
     ) -> None:
         """Test creating a Project from a configuration directory."""
         # Mock the config loading
@@ -288,7 +287,7 @@ class TestProject:
                 "project_description": "A test project",
                 "agents": [
                     {"name": "agent1", "type": "default"},
-                    {"name": "agent2", "type": "number_adder"},
+                    {"name": "agent2", "type": "default"},
                     {"name": "agent3", "type": "analyst"},
                     {"name": "agent4", "type": "research_analyst"},
                     {"name": "agent5", "type": "architect"},
@@ -305,24 +304,31 @@ class TestProject:
             },
         }
         
-        # Mock agents with minimal setup
-        for mock_func in [
-            mock_agent_from_config, 
-            mock_number_adder_from_config,
-            mock_analyst_agent_from_config,
-            mock_analyst_from_config,
-            mock_architect_from_config,
-            mock_engineer_from_config,
-            mock_qa_from_config,
-            mock_reviewer_from_config
-        ]:
-            mock_agent = MagicMock()
-            mock_func.return_value = mock_agent
+        # Set up return values for each mock
+        mock_agent = MagicMock()
+        mock_agent_from_config.return_value = mock_agent
+        
+        mock_analyst = MagicMock()
+        mock_analyst_from_config.return_value = mock_analyst
+        
+        mock_research = MagicMock()
+        mock_research_analyst_from_config.return_value = mock_research
+        
+        mock_arch = MagicMock()
+        mock_architect_from_config.return_value = mock_arch
+        
+        mock_eng = MagicMock()
+        mock_engineer_from_config.return_value = mock_eng
+        
+        mock_qa = MagicMock()
+        mock_qa_from_config.return_value = mock_qa
+        
+        mock_rev = MagicMock()
+        mock_reviewer_from_config.return_value = mock_rev
         
         # Mock task creation
-        for _ in range(2):
-            mock_task = MagicMock()
-            mock_task_from_config.return_value = mock_task
+        mock_task = MagicMock()
+        mock_task_from_config.return_value = mock_task
         
         # Call the method
         project = Project.from_config("fake_dir")
@@ -344,10 +350,9 @@ class TestProject:
         assert task_names == expected_task_names
         
         # Verify the from_config methods were called the expected number of times
-        assert mock_agent_from_config.call_count == 1
-        assert mock_number_adder_from_config.call_count == 1
-        assert mock_analyst_agent_from_config.call_count == 1
+        assert mock_agent_from_config.call_count == 2  # For default agents
         assert mock_analyst_from_config.call_count == 1
+        assert mock_research_analyst_from_config.call_count == 1
         assert mock_architect_from_config.call_count == 1
         assert mock_engineer_from_config.call_count == 1
         assert mock_qa_from_config.call_count == 1
