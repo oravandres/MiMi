@@ -1,0 +1,83 @@
+project_name: "Software Engineer AI Super Agent"
+project_description: "A multi-agent system that manages software projects from requirements to delivery, with specialized agents for different phases of the development lifecycle"
+
+agents:
+  - name: "research-analyst"
+    type: "research_analyst"
+    role: "Research Analyst"
+    description: "Analyzes project requirements and prepares detailed specifications for the Architect"
+    model_name: "qwen3:latest"
+    model_provider: "ollama"
+    model_settings:
+      base_url: "http://localhost:11434"
+      temperature: 0.2
+      stream: false
+
+  - name: "architect"
+    type: "architect"
+    role: "Solution Architect"
+    description: "Creates architecture plans and divides work into tasks for the engineering team"
+    model_name: "deepseek-r1:latest"
+    model_provider: "ollama"
+    model_settings:
+      base_url: "http://localhost:11434"
+      temperature: 0.1
+      stream: false
+
+  - name: "engineer-1"
+    type: "software_engineer"
+    role: "Backend Engineer"
+    description: "Implements backend components according to the architecture plan"
+    model_name: "qwen3:latest"
+    model_provider: "ollama"
+    specialty: "backend"
+    model_settings:
+      base_url: "http://localhost:11434"
+      temperature: 0.1
+      stream: false
+
+  - name: "engineer-2"
+    type: "software_engineer"
+    role: "Frontend Engineer"
+    description: "Implements frontend components according to the architecture plan"
+    model_name: "deepseek-r1:latest"
+    model_provider: "ollama"
+    specialty: "frontend"
+    model_settings:
+      base_url: "http://localhost:11434"
+      temperature: 0.1
+      stream: false
+
+  - name: "engineer-3"
+    type: "software_engineer"
+    role: "Infrastructure Engineer"
+    description: "Implements infrastructure components according to the architecture plan"
+    model_name: "qwen3:latest"
+    model_provider: "ollama"
+    specialty: "infrastructure"
+    model_settings:
+      base_url: "http://localhost:11434"
+      temperature: 0.1
+      stream: false
+
+  - name: "qa-engineer"
+    type: "qa_engineer"
+    role: "Quality Assurance Engineer"
+    description: "Tests software components, identifies bugs, and creates documentation"
+    model_name: "deepseek-r1:latest"
+    model_provider: "ollama"
+    model_settings:
+      base_url: "http://localhost:11434"
+      temperature: 0.1
+      stream: false
+
+  - name: "reviewer"
+    type: "reviewer"
+    role: "Project Reviewer"
+    description: "Reviews and evaluates the final project, provides feedback for improvements"
+    model_name: "qwen3:latest"
+    model_provider: "ollama"
+    model_settings:
+      base_url: "http://localhost:11434"
+      temperature: 0.2
+      stream: false 

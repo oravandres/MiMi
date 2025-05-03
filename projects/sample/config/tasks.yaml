@@ -1,0 +1,126 @@
+tasks:
+  - name: "requirements-analysis"
+    description: "Analyze project requirements and prepare specifications"
+    agent: "research-analyst"
+    input_key: "project_requirements"
+    output_key: "project_specs"
+    depends_on: []
+
+  - name: "architecture-design"
+    description: "Create architecture design and component breakdown"
+    agent: "architect"
+    input_key: "project_specs"
+    output_key: "architecture_plan"
+    depends_on: ["requirements-analysis"]
+
+  - name: "task-planning"
+    description: "Break down architecture into specific engineering tasks"
+    agent: "architect"
+    input_key: "architecture_plan"
+    output_key: "engineering_tasks"
+    depends_on: ["architecture-design"]
+
+  - name: "backend-implementation"
+    description: "Implement backend components according to architecture"
+    agent: "engineer-1"
+    input_key: "engineering_tasks"
+    output_key: "backend_components"
+    depends_on: ["task-planning"]
+
+  - name: "frontend-implementation"
+    description: "Implement frontend components according to architecture"
+    agent: "engineer-2"
+    input_key: "engineering_tasks"
+    output_key: "frontend_components"
+    depends_on: ["task-planning"]
+
+  - name: "infrastructure-implementation"
+    description: "Implement infrastructure components according to architecture"
+    agent: "engineer-3"
+    input_key: "engineering_tasks"
+    output_key: "infrastructure_components"
+    depends_on: ["task-planning"]
+
+  - name: "integration"
+    description: "Integrate all components into a complete system"
+    agent: "engineer-1"
+    input_key: "engineering_tasks"
+    output_key: "integrated_system"
+    depends_on: ["backend-implementation", "frontend-implementation", "infrastructure-implementation"]
+
+  - name: "testing"
+    description: "Test the integrated system for bugs and issues"
+    agent: "qa-engineer"
+    input_key: "integrated_system"
+    output_key: "test_results"
+    depends_on: ["integration"]
+
+  - name: "bug-fixing"
+    description: "Fix bugs identified during testing"
+    agent: "engineer-1"
+    input_key: "test_results"
+    output_key: "fixed_system"
+    depends_on: ["testing"]
+
+  - name: "documentation"
+    description: "Create documentation for the system"
+    agent: "qa-engineer"
+    input_key: "fixed_system"
+    output_key: "documentation"
+    depends_on: ["bug-fixing"]
+
+  - name: "project-review"
+    description: "Review the final project against initial requirements"
+    agent: "reviewer"
+    input_key: "documentation"
+    output_key: "project_review"
+    depends_on: ["documentation"]
+
+  - name: "issue-classification"
+    description: "Classify review issues by responsible component/team"
+    agent: "architect"
+    input_key: "project_review"
+    output_key: "classified_issues"
+    depends_on: ["project-review"]
+
+  - name: "backend-fixes"
+    description: "Fix backend issues identified during review"
+    agent: "engineer-1"
+    input_key: "classified_issues"
+    output_key: "backend_fixes"
+    depends_on: ["issue-classification"]
+
+  - name: "frontend-fixes"
+    description: "Fix frontend issues identified during review"
+    agent: "engineer-2"
+    input_key: "classified_issues"
+    output_key: "frontend_fixes"
+    depends_on: ["issue-classification"]
+
+  - name: "infrastructure-fixes"
+    description: "Fix infrastructure issues identified during review"
+    agent: "engineer-3"
+    input_key: "classified_issues"
+    output_key: "infrastructure_fixes"
+    depends_on: ["issue-classification"]
+
+  - name: "collect-fixes"
+    description: "Collect all component fixes for integration"
+    agent: "architect"
+    input_key: "classified_issues"
+    output_key: "all_fixes"
+    depends_on: ["backend-fixes", "frontend-fixes", "infrastructure-fixes"]
+
+  - name: "fixes-integration"
+    description: "Integrate all fixed components"
+    agent: "engineer-1"
+    input_key: "all_fixes"
+    output_key: "integrated_fixes"
+    depends_on: ["collect-fixes"]
+
+  - name: "final-review"
+    description: "Final review of the project after fixes"
+    agent: "reviewer"
+    input_key: "integrated_fixes"
+    output_key: "final_approval"
+    depends_on: ["fixes-integration"] 

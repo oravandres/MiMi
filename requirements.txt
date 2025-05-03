@@ -1,0 +1,1 @@
+Create a simple weather app that shows the current temperature for a given city.
