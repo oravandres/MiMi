@@ -12,8 +12,7 @@ from mimi.utils.output_manager import (
     create_output_directory,
     save_documentation,
     save_code_blocks_from_text,
-    create_or_update_project_log,
-    _load_current_project_dir
+    create_or_update_project_log
 )
 
 
@@ -26,12 +25,14 @@ def get_project_directory(project_title: str) -> Path:
     Returns:
         The path to the project directory.
     """
-    # First try to load the existing project directory from state file
-    loaded_dir = _load_current_project_dir()
-    if loaded_dir is not None:
-        return loaded_dir
+    # Get caller info for debugging
+    import traceback
+    stack = traceback.extract_stack()
+    caller = stack[-2]  # Get caller info
+    logger.debug(f"PROJECT DIR DEBUG: get_project_directory({project_title}) called from {caller.filename}:{caller.lineno}")
     
-    # If no existing directory, create a new one
+    # Create a path to the project directory using the output manager
+    # This will either create a new directory or find an existing one with the same title
     return create_output_directory(project_title)
 
 
@@ -96,26 +97,64 @@ class QAEngineerAgent(Agent):
             # Extract input data in various formats
             # For QA lead role, extract from the system_under_test field or look for integration data
             if self.role == "QA Lead" or "qa-lead" in self.name.lower():
+                # Log the full input data structure for debugging
+                logger.debug(f"QA Lead received input keys: {task_input.keys() if isinstance(task_input, dict) else 'Not a dict'}")
+                
                 # Look for system_under_test in task_input
-                if "system_under_test" in task_input:
+                if isinstance(task_input, dict) and "system_under_test" in task_input:
                     return self._test_system(task_input["system_under_test"], task_input, project_dir, project_title)
                 # Look for any integrated components
-                elif "integrated_components" in task_input:
+                elif isinstance(task_input, dict) and "integrated_components" in task_input:
                     return self._test_system(task_input["integrated_components"], task_input, project_dir, project_title)
-                # Look for integrated_frontend, integrated_backend, etc.
-                elif any(key.startswith("integrated_") for key in task_input.keys()):
-                    # Combine all integrated components
-                    integrated_components = ""
-                    for key, value in task_input.items():
-                        if key.startswith("integrated_"):
-                            if isinstance(value, dict) and "data" in value:
-                                integrated_components += f"\n\n# {key.replace('integrated_', '').upper()}\n{value['data']}\n"
-                            else:
-                                integrated_components += f"\n\n# {key.replace('integrated_', '').upper()}\n{value}\n"
-                    return self._test_system(integrated_components, task_input, project_dir, project_title)
-                # Look for deployed_system
-                elif "deployed_system" in task_input:
-                    return self._test_system(task_input["deployed_system"], task_input, project_dir, project_title)
+                # Look for implementation field which is commonly used
+                elif isinstance(task_input, dict) and "implementation" in task_input:
+                    return self._test_system(task_input["implementation"], task_input, project_dir, project_title)
+                # Look for data field which might contain the implementation
+                elif isinstance(task_input, dict) and "data" in task_input and isinstance(task_input["data"], str):
+                    return self._test_system(task_input["data"], task_input, project_dir, project_title)
+                # Look for backend_implementation field
+                elif isinstance(task_input, dict) and "backend_implementation" in task_input:
+                    return self._test_system(task_input["backend_implementation"], task_input, project_dir, project_title)
+                # If task_input itself is a string, use it as the implementation
+                elif isinstance(task_input, str) and len(task_input) > 100:
+                    return self._test_system(task_input, {"input": task_input}, project_dir, project_title)
+                # If nothing obvious found, test the entire project directory
+                else:
+                    # Create a simple representation of the project to test
+                    system_to_test = f"Project directory: {project_dir}\n"
+                    
+                    # Try to find and add index.html content
+                    index_path = project_dir / "index.html"
+                    if index_path.exists():
+                        try:
+                            with open(index_path, 'r') as f:
+                                index_content = f.read()
+                                system_to_test += f"\n# index.html\n{index_content}\n"
+                        except Exception as e:
+                            logger.error(f"Error reading index.html: {str(e)}")
+                    
+                    # Try to find and add game.js content
+                    game_js_path = project_dir / "js" / "game.js"
+                    if game_js_path.exists():
+                        try:
+                            with open(game_js_path, 'r') as f:
+                                js_content = f.read()
+                                system_to_test += f"\n# js/game.js\n{js_content}\n"
+                        except Exception as e:
+                            logger.error(f"Error reading game.js: {str(e)}")
+                    
+                    # Try to find and add styles.css content
+                    css_path = project_dir / "css" / "styles.css"
+                    if css_path.exists():
+                        try:
+                            with open(css_path, 'r') as f:
+                                css_content = f.read()
+                                system_to_test += f"\n# css/styles.css\n{css_content}\n"
+                        except Exception as e:
+                            logger.error(f"Error reading styles.css: {str(e)}")
+                    
+                    logger.info(f"QA Lead testing project directory: {project_dir}")
+                    return self._test_system(system_to_test, task_input, project_dir, project_title)
             
             # Standard handling for normal QA Engineers
             # Determine the task type based on input
@@ -190,28 +229,99 @@ class QAEngineerAgent(Agent):
             f"Testing integrated system for {project_title}"
         )
         
-        # Construct the prompt for the model
-        prompt = f"""
-        # Integrated System
-        {integrated_system}
+        # Check if this is a game implementation
+        is_game = False
+        if "game" in project_title.lower() or "flappy" in project_title.lower() or "flappy" in integrated_system.lower():
+            is_game = True
+            
+        # First, check for specific files that should exist based on project type
+        missing_files = []
         
-        # Task
-        Test the integrated system by:
-        - Creating a comprehensive test plan covering all components
-        - For each component:
-          * Define test cases (including edge cases)
-          * Execute tests (simulated)
-          * Document any issues found
-        - Categorize issues by severity (critical, high, medium, low)
-        - Provide recommendations for fixing each issue
-        
-        Format your response as a structured test report.
-        Include actual test code files where appropriate, using the format:
-        ```language
-        tests/component/filename.ext
-        // Test code content
-        ```
-        """
+        if is_game:
+            # For game projects, check essential files
+            essential_files = [
+                (project_dir / "index.html", "Main HTML file"),
+                (project_dir / "js" / "game.js", "Main game JavaScript"),
+                (project_dir / "css" / "styles.css", "Game CSS styles")
+            ]
+            
+            for file_path, description in essential_files:
+                if not file_path.exists():
+                    missing_files.append(f"{description} ({file_path}) is missing")
+                    
+            # If critical files are missing, create a specialized test report
+            if missing_files:
+                logger.warning(f"Found {len(missing_files)} missing files in game implementation")
+                test_results = self._generate_missing_files_report(missing_files, project_dir, project_title)
+                return test_results
+                
+        # Construct the main testing prompt based on project type        
+        if is_game:
+            prompt = f"""
+            # Game Implementation Testing
+            
+            ## Project: {project_title}
+            
+            ## Test this HTML5 game implementation for bugs and issues:
+            {integrated_system}
+            
+            # Task
+            As a QA Engineer, thoroughly test this game implementation by:
+            
+            1. Checking all required files exist:
+               - index.html (must exist at project root)
+               - game.js (must handle game logic)
+               - styles.css (must style the game elements)
+            
+            2. Reviewing the implementation for common issues:
+               - Missing event handlers
+               - Incomplete game logic (collisions, scoring, game over)
+               - Incorrect file references
+               - Missing or incomplete HTML structure
+               - CSS problems or errors
+               - Incomplete JavaScript game functionality
+            
+            3. Specifically for Flappy Bird game:
+               - Bird physics implementation
+               - Pipe generation and movement
+               - Collision detection
+               - Scoring mechanism
+               - Game over handling
+               - Game restart functionality
+               - Visual style and aesthetics
+            
+            ## Format your response as a detailed test report including:
+            1. Executive summary (overall assessment)
+            2. Detailed findings for each component
+            3. Issues categorized by component and severity
+            4. Specific fix recommendations for each issue
+            5. Suggested improvements
+            
+            Include actual test code files where appropriate to validate functionality.
+            """
+        else:
+            # Default prompt for non-game implementations
+            prompt = f"""
+            # Integrated System
+            {integrated_system}
+            
+            # Task
+            Test the integrated system by:
+            - Creating a comprehensive test plan covering all components
+            - For each component:
+              * Define test cases (including edge cases)
+              * Execute tests (simulated)
+              * Document any issues found
+            - Categorize issues by severity (critical, high, medium, low)
+            - Provide recommendations for fixing each issue
+            
+            Format your response as a structured test report.
+            Include actual test code files where appropriate, using the format:
+            ```language
+            tests/component/filename.ext
+            // Test code content
+            ```
+            """
         
         # Get model client
         client = self.get_model_client()
@@ -227,6 +337,10 @@ class QAEngineerAgent(Agent):
         
         # Extract and save test code from the response
         saved_test_files = save_code_blocks_from_text(project_dir, "tests", response)
+        
+        # For game projects, create a simple validation test
+        if is_game:
+            self._create_game_validation_test(project_dir)
         
         # Structure the output
         test_results = {
@@ -247,6 +361,166 @@ class QAEngineerAgent(Agent):
         )
         
         return test_results
+    
+    def _generate_missing_files_report(self, missing_files: list, project_dir: Path, project_title: str) -> Dict[str, Any]:
+        """Generate a test report specifically for missing essential files.
+        
+        Args:
+            missing_files: List of missing files with descriptions
+            project_dir: Project directory path
+            project_title: Project title
+            
+        Returns:
+            Dictionary with test results
+        """
+        # Create a structured report focused on the missing files
+        report = f"""# Critical Implementation Issues: Missing Files
+        
+## Project: {project_title}
+
+## Executive Summary
+The implementation is **incomplete** with critical files missing. The game cannot function without these core components.
+
+## Missing Essential Files
+{chr(10).join(f"- {file}" for file in missing_files)}
+
+## Recommendations
+The implementation needs to be redone with the following structure:
+
+1. `index.html` - Main HTML file at project root:
+   - Should include proper DOCTYPE and HTML structure
+   - Should link to CSS and JS files correctly
+   - Should define the game container (canvas or div elements)
+
+2. `js/game.js` - Main game logic:
+   - Game initialization
+   - Event handlers for user input
+   - Game loop implementation
+   - Collision detection
+   - Scoring mechanism
+   - Game state management
+
+3. `css/styles.css` - Game styling:
+   - Game container styling
+   - Game element visual properties
+   - Responsiveness for different screen sizes
+
+## Required Action
+The implementation needs to be completely redone to include all necessary files with proper structure.
+"""
+
+        # Save the test results document
+        test_results_path = project_dir / "tests" / "test_results.md"
+        test_results_path.parent.mkdir(exist_ok=True)
+        with open(test_results_path, 'w') as f:
+            f.write(report)
+            
+        # Structure the output
+        test_results = {
+            "timestamp": datetime.now().isoformat(),
+            "qa_engineer": self.name,
+            "test_results": report,
+            "status": "error",
+            "message": "Critical implementation issues: Missing essential files",
+            "project_title": project_title,
+            "project_dir": str(project_dir),
+            "test_results_doc": str(test_results_path),
+            "missing_files": missing_files
+        }
+        
+        return test_results
+        
+    def _create_game_validation_test(self, project_dir: Path) -> None:
+        """Create a simple validation test for HTML5 games.
+        
+        Args:
+            project_dir: Project directory path
+        """
+        validation_js = """// game_validation.test.js
+// Simple validation test for HTML5 game implementation
+
+function validateGameImplementation() {
+    // Check for essential files
+    const files = {
+        html: fileExists('index.html'),
+        js: fileExists('js/game.js'),
+        css: fileExists('css/styles.css')
+    };
+    
+    console.log('File validation:', files);
+    
+    // Check HTML content
+    const htmlContent = readFile('index.html');
+    const htmlValidation = {
+        hasDoctype: htmlContent.includes('<!DOCTYPE html>'),
+        hasCanvas: htmlContent.includes('<canvas') || 
+                   (htmlContent.includes('<div') && htmlContent.includes('id="game"')),
+        hasScriptLink: htmlContent.includes('src="js/game.js"'),
+        hasCssLink: htmlContent.includes('href="css/styles.css"')
+    };
+    
+    console.log('HTML validation:', htmlValidation);
+    
+    // Check JS content
+    const jsContent = readFile('js/game.js');
+    const jsValidation = {
+        hasEventListeners: jsContent.includes('addEventListener'),
+        hasGameLoop: jsContent.includes('requestAnimationFrame') || 
+                     jsContent.includes('setInterval'),
+        hasCollisionDetection: jsContent.includes('collision') ||
+                               jsContent.includes('hit') || 
+                               jsContent.includes('intersect'),
+        hasScoreTracking: jsContent.includes('score')
+    };
+    
+    console.log('JavaScript validation:', jsValidation);
+    
+    // Check CSS content
+    const cssContent = readFile('css/styles.css');
+    const cssValidation = {
+        hasBodyStyles: cssContent.includes('body {'),
+        hasGameContainerStyles: cssContent.includes('#game') || 
+                               cssContent.includes('.game') ||
+                               cssContent.includes('canvas')
+    };
+    
+    console.log('CSS validation:', cssValidation);
+    
+    // Overall validation
+    const overallValidation = {
+        filesComplete: Object.values(files).every(Boolean),
+        htmlComplete: Object.values(htmlValidation).every(Boolean),
+        jsComplete: Object.values(jsValidation).every(Boolean),
+        cssComplete: Object.values(cssValidation).every(Boolean)
+    };
+    
+    console.log('Overall validation:', overallValidation);
+    
+    // Helper functions (mocked for simulation)
+    function fileExists(path) {
+        // In a real test, this would check if the file exists
+        console.log(`Checking if ${path} exists`);
+        return true; // Mocked result
+    }
+    
+    function readFile(path) {
+        // In a real test, this would read file contents
+        console.log(`Reading ${path}`);
+        return "Mocked file content"; // Mocked result
+    }
+}
+
+// Execute validation
+validateGameImplementation();
+"""
+
+        # Save validation test
+        validation_path = project_dir / "tests" / "game_validation.test.js"
+        validation_path.parent.mkdir(exist_ok=True)
+        with open(validation_path, 'w') as f:
+            f.write(validation_js)
+            
+        logger.info(f"Created game validation test at {validation_path}")
     
     def _create_documentation(self, fixed_system: str, full_input: Dict[str, Any], project_dir: Path, project_title: str) -> Dict[str, Any]:
         """Create documentation for the system."""

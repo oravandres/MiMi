@@ -1,0 +1,129 @@
+project_name: "Simple Software Project"
+project_description: "A simple but abstract software project where the real topic comes from input"
+
+# Global configuration applicable to all sub-projects
+global:
+  model_providers:
+  - name: "ollama"
+    base_url: "http://localhost:11434"
+  default_model_settings:
+    temperature: 0.2
+    stream: false
+  output_dir: "Software"
+
+# Define a single sub-project with minimal structure
+sub_projects:
+- name: "software-development"
+  description: "Development of the software project based on input requirements"
+  priority: 1
+  parallel: false
+
+  # Simplified task structure
+  tasks:
+  - name: "requirements-analysis"
+    description: "Analyze requirements from input and prepare specifications"
+    agent: "direct_analyst"
+    input_key: "input"
+    output_key: "specifications"
+    depends_on: []
+    task_type: "text"
+
+  - name: "development"
+    description: "Implement the software based on specifications"
+    agent: "direct_dev"
+    input_key: "input" # Use raw input directly
+    output_key: "implementation"
+    output_format: "files" # Explicitly specify output format
+    depends_on: [ "requirements-analysis" ]
+    task_type: "code"
+
+  - name: "review"
+    description: "Review the implementation for quality and correctness"
+    agent: "direct_reviewer"
+    input_key: "input" # Use raw input directly
+    output_key: "review_results"
+    depends_on: [ "development" ]
+    task_type: "text"
+
+# Define simplified agents
+agents:
+- name: "direct_analyst"
+  type: "direct_code"
+  role: "Requirements Analyst"
+  description: "Analyzes input requirements and prepares detailed specifications"
+  model_name: "qwen3:latest"
+  model_provider: "ollama"
+  system_prompt: |
+    You are a requirements analyst responsible for analyzing project requirements and preparing detailed specifications.
+
+    The input is a simple string description:
+    "Create javascript and html app of flappy bird, that I could run in easily, code must work easily with only index.html. Tests should be separately."
+
+    TASK:
+    Create detailed specifications for a Flappy Bird game that can be implemented in a single HTML file.
+
+    OUTPUT FORMAT:
+    Your output should be in a JSON format with these sections:
+    - title: The title of the project
+    - description: A detailed description of what needs to be built
+    - features: A list of features the game should have
+    - technical_requirements: Technical specifications for the implementation
+  output_files:
+  - path: "specifications.json"
+    description: "Detailed project specifications"
+
+- name: "direct_dev"
+  type: "direct_code"
+  role: "Software Developer"
+  description: "Implements the software based on specifications"
+  model_name: "deepseek-r1:latest"
+  model_provider: "ollama"
+  system_prompt: |
+    You are a software developer who implements solutions based on specifications. 
+
+    You need to create a simple Flappy Bird game that runs entirely from a single index.html file.
+
+    REQUIREMENTS:
+    1. All code (HTML, CSS, JavaScript) must be in a single index.html file
+    2. The game must be playable with basic Flappy Bird mechanics
+    3. No external dependencies (use only vanilla JavaScript)
+    4. Create the file in the project root
+
+    Also create separate test files in a 'tests' directory that can verify the game functionality.
+
+    OUTPUT:
+    1. A single index.html file in the project root with all game code
+    2. Test files in the tests/ directory
+  output_files:
+  - path: "index.html"
+    description: "Main game file with all HTML, CSS and JavaScript"
+  - path: "tests/test_game.js"
+    description: "Tests for the game functionality"
+
+- name: "direct_reviewer"
+  type: "direct_code"
+  role: "Code Reviewer"
+  description: "Reviews implementation for quality and correctness"
+  model_name: "qwen3:latest"
+  model_provider: "ollama"
+  system_prompt: |
+    You are a code reviewer who evaluates implementation against requirements and best practices.
+
+    The project is a Flappy Bird game implemented in a single index.html file.
+
+    REVIEW TASK:
+    1. Check if the implementation meets the requirements (single HTML file with all code)
+    2. Evaluate the code quality, organization, and best practices
+    3. Test if the game mechanics work properly
+    4. Check if appropriate tests were created in the tests directory
+
+    OUTPUT:
+    Provide a markdown format review with sections for:
+    - Overall assessment
+    - Code quality
+    - Functionality
+    - Tests
+    - Recommendations
+  output_files:
+  - path: "review.md"
+    description: "Code review report"

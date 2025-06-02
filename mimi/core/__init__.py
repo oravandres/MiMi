@@ -4,8 +4,6 @@
 from mimi.core.agents import (
     Agent,
     AnalystAgent,
-    FeedbackProcessorAgent,
-    TaskSplitterAgent,
 )
 
 # Re-export other core components

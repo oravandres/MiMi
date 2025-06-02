@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: mimi-postgres
+    environment:
+      POSTGRES_USER: mimi_user
+      POSTGRES_PASSWORD: mimi_password
+      POSTGRES_DB: mimi_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mimi_user -d mimi_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: mimi-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    
+  api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: mimi-api
+    environment:
+      DB_USER: mimi_user
+      DB_PASSWORD: mimi_password
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: mimi_db
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    volumes:
+      - ./app:/app
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  postgres_data: 

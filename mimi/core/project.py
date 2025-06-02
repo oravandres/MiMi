@@ -15,16 +15,19 @@ from pydantic import BaseModel, Field, ConfigDict
 from mimi.core.agents import (
     Agent, 
     AnalystAgent, 
-    FeedbackProcessorAgent, 
-    ResearchAnalystAgent, 
     ArchitectAgent,
     SoftwareEngineerAgent,
     QAEngineerAgent,
-    ReviewerAgent
+    ReviewerAgent,
+    DeveloperAgent,
+    SecurityEngineerAgent,
+    UIDesignerAgent,
+    TechnicalWriterAgent
 )
 from mimi.core.task import Task
 from mimi.utils.config import load_project_config
 from mimi.utils.logger import logger, project_log
+from mimi.utils.output_manager import create_or_update_project_log
 
 
 class Project(BaseModel):
@@ -132,6 +135,33 @@ class Project(BaseModel):
             
         return result
 
+    def update_project_log(self, agent_name: str, event_type: str, description: str, details: Dict[str, Any]) -> None:
+        """Update the project log with agent outputs.
+        
+        Args:
+            agent_name: Name of the agent
+            event_type: Type of event (e.g., "code-implementation", "ui-design")
+            description: Description of the action
+            details: Details about the action
+        """
+        if agent_name in self.agents:
+            agent = self.agents[agent_name]
+            try:
+                # Try to get project_dir from details
+                project_dir = details.get("project_dir", None)
+                if project_dir:
+                    # Create or update the project log
+                    create_or_update_project_log(
+                        project_dir=project_dir,
+                        event_type=event_type,
+                        agent_name=agent_name,
+                        description=description,
+                        details=details
+                    )
+                    logger.info(f"Updated project log for agent '{agent_name}': {event_type}")
+            except Exception as e:
+                logger.error(f"Error updating project log for agent '{agent_name}': {str(e)}")
+
     @classmethod
     def from_config(cls, config_dir: Union[str, Path]) -> "Project":
         """Create a project from a configuration directory.
@@ -170,29 +200,26 @@ class Project(BaseModel):
             if agent_type.lower() == "analyst":
                 # Special case for analyst agents
                 agent = AnalystAgent.from_config(agent_config)
-            elif agent_type.lower() == "feedback_processor":
-                # Special case for feedback processor agents
-                agent = FeedbackProcessorAgent.from_config(agent_config)
-            # New agent types for Software Engineer AI Super Agent
-            elif agent_type.lower() == "research_analyst":
-                agent = ResearchAnalystAgent.from_config(agent_config)
             elif agent_type.lower() == "architect":
                 agent = ArchitectAgent.from_config(agent_config)
             elif agent_type.lower() == "software_engineer" or agent_type.lower() == "developer":
                 agent = SoftwareEngineerAgent.from_config(agent_config)
-            elif agent_type.lower() == "qa_engineer":
+            elif agent_type.lower() == "qa_engineer" or agent_type.lower() == "qa":
                 agent = QAEngineerAgent.from_config(agent_config)
             elif agent_type.lower() == "reviewer":
                 agent = ReviewerAgent.from_config(agent_config)
-            elif agent_type.lower() == "writer":
+            elif agent_type.lower() == "writer" or agent_type.lower() == "technical_writer":
                 # Map writer type to agent
-                agent = Agent.from_config(agent_config)
-            elif agent_type.lower() == "designer":
+                agent = TechnicalWriterAgent.from_config(agent_config)
+            elif agent_type.lower() == "designer" or agent_type.lower() == "ui_designer":
                 # Map designer type to agent
-                agent = Agent.from_config(agent_config)
+                agent = UIDesignerAgent.from_config(agent_config)
+            elif agent_type.lower() == "security_engineer" or agent_type.lower() == "security":
+                # Map security engineer type to agent
+                agent = SecurityEngineerAgent.from_config(agent_config)
             elif agent_type.lower() == "engineer":
                 # Map general engineer type to agent
-                agent = Agent.from_config(agent_config)
+                agent = DeveloperAgent.from_config(agent_config)
             else:
                 # Default agent type
                 agent = Agent.from_config(agent_config)

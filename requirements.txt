@@ -1,1 +1,2 @@
-Create a simple weather app that shows the current temperature for a given city.
+loguru>=0.7.0
+rich>=13.4.2

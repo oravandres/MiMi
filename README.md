@@ -14,6 +14,8 @@ MiMi is a Python framework for creating and running AI systems with multiple spe
 - **Model Integration** - Support for Ollama and extensible for other providers
 - **Comprehensive Logging** - Detailed logging of agent and task activities
 - **Clean Architecture** - Following SOLID principles and best practices
+- **Automatic Project Setup** - Automatically creates a projects directory on application startup
+- **Parameter-Based Project Handling** - Projects are identified by parameters passed between components rather than global state
 
 ## Requirements
 
@@ -76,6 +78,10 @@ print(f"Result: {result}")
 # Run a project from the command line
 python -m mimi --config projects/sample/config --input 5
 ```
+
+### Project Directory Structure
+
+When MiMi starts up, it automatically creates a `projects` directory in the current working directory if it doesn't already exist. This is where you can store your project configuration files. The sample projects are already included in this directory.
 
 ## Sample Project
 
@@ -367,3 +373,34 @@ In tasks.yaml:
 ## License
 
 MIT License 
+
+## Project Context Handling
+
+MiMi uses a parameter-based approach for passing project information between components:
+
+- Project information (title, directory) is passed explicitly via parameters
+- The ProjectRunner ensures that project context is consistently propagated between tasks
+- Agent components automatically handle project parameters for file operations
+- All state is kept within function parameters, resulting in more testable and maintainable code
+
+### Project Directory Management
+
+When executing a workflow, the project creates a directory structure based on project title:
+
+```python
+from mimi.core.project import Project
+from mimi.core.runner import ProjectRunner
+
+# Load a project from configuration
+project = Project.from_config("projects/sample/config")
+
+# Run the project with input parameters
+# Project title is automatically passed to all tasks
+runner = ProjectRunner(project)
+result = runner.run({"input": 5})
+print(f"Result: {result}")
+```
+
+Each task in the workflow will receive the project title and directory as parameters, ensuring consistency across the entire project execution. 
+
+**Important:** The `project_title` parameter is a required invariant for all task inputs. If it is missing from any task input, the system will raise an error and halt execution. This ensures that project context is always available and surfaces configuration or propagation bugs early. 

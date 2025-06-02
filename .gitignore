@@ -29,6 +29,7 @@ venv/
 ENV/
 .env
 .venv
+.dev
 virtualenv/
 python-venv/
 

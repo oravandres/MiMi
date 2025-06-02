@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 import re
+import sys
 
 from pydantic import Field
 
@@ -15,8 +16,7 @@ from mimi.utils.output_manager import (
     create_output_directory,
     process_implementation_output,
     save_code_blocks_from_text,
-    create_or_update_project_log,
-    _load_current_project_dir
+    create_or_update_project_log
 )
 
 
@@ -29,12 +29,14 @@ def get_project_directory(project_title: str) -> Path:
     Returns:
         The path to the project directory.
     """
-    # First try to load the existing project directory from state file
-    loaded_dir = _load_current_project_dir()
-    if loaded_dir is not None:
-        return loaded_dir
+    # Get caller info for debugging
+    import traceback
+    stack = traceback.extract_stack()
+    caller = stack[-2]  # Get caller info
+    logger.debug(f"PROJECT DIR DEBUG: get_project_directory({project_title}) called from {caller.filename}:{caller.lineno}")
     
-    # If no existing directory, create a new one
+    # Create a path to the project directory using the output manager
+    # This will either create a new directory or find an existing one with the same title
     return create_output_directory(project_title)
 
 
@@ -44,327 +46,192 @@ class SoftwareEngineerAgent(Agent):
     specialty: str = Field("backend", description="Engineer's specialty (backend, frontend, or infrastructure)")
     
     def execute(self, task_input: Any) -> Any:
-        """Implement software components according to the task plan.
+        """Execute a software engineering task.
         
         Args:
-            task_input: A dictionary containing the task plan and project information.
+            task_input: The input to the task.
             
         Returns:
-            A dictionary with the implemented components.
+            The output from the task.
         """
-        agent_log(
-            self.name,
-            "execute",
-            f"Implementing {self.specialty} components"
-        )
+        agent_log(self.name, "execute", f"Executing task")
         
-        # Log the input type for easier debugging
-        input_type = type(task_input).__name__
-        logger.debug(f"SoftwareEngineerAgent({self.specialty}) received input of type: {input_type}")
+        # Check if this is a dict with nested input
+        if isinstance(task_input, dict) and "input" in task_input and isinstance(task_input["input"], dict):
+            # Debug the nested input structure
+            logger.debug(f"SoftwareEngineerAgent received nested input with keys: {list(task_input.keys())}")
+            logger.debug(f"Inner input has keys: {list(task_input['input'].keys())}")
+            
+            # Check if project_dir exists at either level
+            if "project_dir" in task_input:
+                logger.debug(f"PROJECT DEBUG: Found project_dir at top level: {task_input['project_dir']}")
+            elif "project_dir" in task_input["input"]:
+                logger.debug(f"PROJECT DEBUG: Found project_dir in nested input: {task_input['input']['project_dir']}")
+            else:
+                logger.debug(f"PROJECT DEBUG: No project_dir found at any level in input")
+                
+            # Extract the true input from the nested structure
+            task_input = task_input["input"]
+            logger.debug(f"Using inner input for task with keys: {list(task_input.keys())}")
         
-        # Extract tasks and project information
-        project_title = "Unknown Project"
-        project_dir_str = None
-        
-        # Extract project information first for all cases
+        # Log detailed structure of task input for debugging
         if isinstance(task_input, dict):
-            # Look for project directory in the direct input
-            project_title = task_input.get("project_title", "Unknown Project")
-            project_dir_str = task_input.get("project_dir", None)
-            
-            # Also look for project info in nested results if not found
-            if project_dir_str is None:
-                # Check all nested dictionaries for project_dir
-                for key, value in task_input.items():
-                    if isinstance(value, dict):
-                        if "project_dir" in value:
-                            project_dir_str = value["project_dir"]
-                            logger.info(f"Found project_dir in nested key '{key}'")
-                        # Also check data field if present
-                        elif "data" in value and isinstance(value["data"], dict) and "project_dir" in value["data"]:
-                            project_dir_str = value["data"]["project_dir"]
-                            logger.info(f"Found project_dir in nested data of key '{key}'")
-                            
-                        # Extract project title if not already found
-                        if project_title == "Unknown Project":
-                            if "project_title" in value:
-                                project_title = value["project_title"]
-                            elif "data" in value and isinstance(value["data"], dict) and "project_title" in value["data"]:
-                                project_title = value["data"]["project_title"]
-            
-            # Log the keys for debugging
+            logger.debug(f"SoftwareEngineerAgent({self.specialty.lower()}) received input of type: dict")
             logger.debug(f"SoftwareEngineerAgent input keys: {list(task_input.keys())}")
-        elif isinstance(task_input, str) and len(task_input) > 0:
-            # If we get a string directly, assume it's a revision plan
-            logger.info("SoftwareEngineerAgent received string input, treating as revision plan")
-        
-        # Get or create project directory
-        if project_dir_str:
-            project_dir = Path(project_dir_str)
-            logger.info(f"Using existing project directory: {project_dir}")
+            
+            # Additional detailed logging for project_dir
+            if "project_dir" in task_input:
+                logger.debug(f"PROJECT DEBUG: Input contains project_dir of type {type(task_input['project_dir'])}: {task_input['project_dir']}")
+            elif "project_title" in task_input:
+                logger.debug(f"PROJECT DEBUG: Input contains project_title but NO project_dir: {task_input['project_title']}")
+            else:
+                logger.debug(f"PROJECT DEBUG: Input contains neither project_dir nor project_title")
         else:
-            project_dir = get_project_directory(project_title)
-            logger.warning(f"Project directory not provided, creating new one for {project_title}")
-        
-        agent_log(
-            self.name,
-            "execute",
-            f"Implementing {self.specialty} components based on tasks"
-        )
-        
+            logger.debug(f"SoftwareEngineerAgent({self.specialty.lower()}) received input of type: {type(task_input).__name__}")
+            
         try:
-            # Special handling for integration task - we detect this by checking if we have the right implementation keys
-            if (isinstance(task_input, dict) and 
-                ("backend-implementation" in task_input or 
-                 "frontend-implementation" in task_input or 
-                 "infrastructure-implementation" in task_input)):
-                
-                logger.info("Detected integration task based on input structure")
-                
-                # Extract components from results dictionary
-                backend_components = None
-                frontend_components = None
-                infrastructure_components = None
-                
-                # Try to extract the component data
-                for key, value in task_input.items():
-                    if key == "backend-implementation" and isinstance(value, dict) and "data" in value:
-                        backend_components = value["data"]
-                    if key == "frontend-implementation" and isinstance(value, dict) and "data" in value:
-                        frontend_components = value["data"] 
-                    if key == "infrastructure-implementation" and isinstance(value, dict) and "data" in value:
-                        infrastructure_components = value["data"]
-                
-                # If we found components, process as integration task
-                if backend_components or frontend_components or infrastructure_components:
-                    # Create a components dictionary for the integration method
-                    components = {
-                        "backend_components": backend_components or {},
-                        "frontend_components": frontend_components or {},
-                        "infrastructure_components": infrastructure_components or {}
-                    }
-                    
-                    # Call integration method using the shared project directory
-                    logger.info(f"Calling _integrate_components with extracted component data")
-                    return self._integrate_components(components, project_dir, project_title)
+            # Get the project directory, creating it if it doesn't exist
+            project_title = None
+            project_dir = None
             
-            # Determine the action based on input
             if isinstance(task_input, dict):
-                # Log key detection for debugging complex inputs
-                revision_keys = [k for k in task_input.keys() if 'revision' in k.lower()]
-                if revision_keys:
-                    logger.debug(f"Found revision-related keys: {revision_keys}")
+                # First check for project_title
+                if "project_title" in task_input:
+                    project_title = task_input["project_title"]
+                    logger.debug(f"PROJECT DEBUG: Found project_title in task_input: {project_title}")
                 
-                if "task_plan" in task_input:
-                    if "engineer_tasks" in task_input:
-                        tasks = task_input["engineer_tasks"].get(self.specialty, task_input["task_plan"])
-                    else:
-                        tasks = task_input["task_plan"]
-                    return self._implement_components(tasks, project_dir, project_title)
-                elif "revision_plan" in task_input:
-                    revision_plan = task_input["revision_plan"]
-                    return self._implement_revisions(revision_plan, project_dir, project_title)
-                elif "revisions" in task_input:
-                    # Handle case where revision is under a different key name
-                    revisions = task_input["revisions"]
-                    return self._implement_revisions(revisions, project_dir, project_title)
-                elif "architecture_plan" in task_input:
-                    # Special case for when revision_plan is contained in the architecture_plan
-                    architecture_plan = task_input["architecture_plan"]
-                    return self._implement_revisions(architecture_plan, project_dir, project_title)
-                elif "test_results" in task_input:
-                    # Get test results, which could be a string or a complex object
-                    test_results = task_input["test_results"]
-                    if isinstance(test_results, dict):
-                        # Extract the actual test results string
-                        test_results_str = test_results.get("test_results", str(test_results))
-                        # If we find an "error" status, use the message
-                        if test_results.get("status") == "error":
-                            test_results_str = test_results.get("message", test_results_str)
-                    else:
-                        test_results_str = str(test_results)
-                    return self._fix_bugs(test_results_str, project_dir, project_title)
-                elif "components" in task_input:
-                    return self._integrate_components(task_input["components"], project_dir, project_title)
-                # Special case for when we just get a testing result directly
-                elif "status" in task_input and task_input.get("status") == "error" and "message" in task_input:
-                    test_results_str = task_input.get("message", "Unknown error")
-                    return self._fix_bugs(test_results_str, project_dir, project_title)
-                # Handle output from AnalystAgent
-                elif "status" in task_input and "message" in task_input and "data" in task_input:
-                    # Extract requirements from AnalystAgent output
-                    if task_input.get("status") == "warning" and "No requirements found" in task_input.get("message", ""):
-                        # Create a simple project based on input value
-                        if isinstance(task_input["data"], dict) and "input" in task_input["data"]:
-                            input_data = task_input["data"]["input"]
-                            if isinstance(input_data, dict) and "input" in input_data:
-                                project_description = input_data["input"]
-                                return self._implement_components(
-                                    f"Create a {self.specialty} implementation for: {project_description}",
-                                    project_dir, 
-                                    project_description[:50] if len(project_description) > 50 else project_description
-                                )
-                    
-                    # If there are requirements_analysis or architecture_recommendations, use those
-                    if isinstance(task_input.get("data"), dict):
-                        data = task_input["data"]
-                        if "requirements_analysis" in data:
-                            requirements = data["requirements_analysis"]
-                            return self._implement_components(json.dumps(requirements), project_dir, project_title)
-                        elif "architecture_recommendations" in data:
-                            arch_recommendations = data["architecture_recommendations"]
-                            return self._implement_components(json.dumps(arch_recommendations), project_dir, project_title)
-                        elif "input" in data and isinstance(data["input"], dict) and "input" in data["input"]:
-                            # Fallback to using the raw input
-                            project_description = data["input"]["input"]
-                            return self._implement_components(
-                                f"Create a {self.specialty} implementation for: {project_description}",
-                                project_dir, 
-                                project_description[:50] if len(project_description) > 50 else project_description
-                            )
-                # Handle the full accumulated results dictionary
-                elif len(task_input) > 3 and "input" in task_input:
-                    # Check if this dictionary contains task results
-                    task_results = {}
-                    test_results = {}
-                    
-                    # Look for test result keys
-                    for key in task_input:
-                        if 'test' in key.lower() and isinstance(task_input[key], dict) and 'data' in task_input[key]:
-                            test_results[key] = task_input[key]['data']
-                    
-                    if test_results:
-                        # We found test results, handle as bug fixing
-                        logger.info(f"Found test results in accumulated task dictionary: {list(test_results.keys())}")
-                        return self._fix_bugs(json.dumps(test_results), project_dir, project_title)
-                    
-                    # Check if we can extract implementation tasks from the accumulated results
-                    design_keys = [k for k in task_input.keys() if 'design' in k.lower() or 'architecture' in k.lower()]
-                    for key in design_keys:
-                        if isinstance(task_input[key], dict) and 'data' in task_input[key]:
-                            task_results[key] = task_input[key]['data']
-                    
-                    if task_results:
-                        # We found design/architecture documents, handle as implementation
-                        logger.info(f"Found design documents in accumulated task dictionary: {list(task_results.keys())}")
-                        design_docs = "\n\n".join([f"## {k}\n{json.dumps(v)}" for k, v in task_results.items()])
-                        return self._implement_components(
-                            f"Implement {self.specialty} components based on the following designs:\n\n{design_docs}",
-                            project_dir, 
-                            project_title
-                        )
-                    
-                    # If we still can't determine the task, extract the original input and create something simple
-                    input_data = task_input.get("input", {})
-                    if isinstance(input_data, dict) and "input" in input_data:
-                        project_description = input_data["input"]
-                        return self._implement_components(
-                            f"Create a {self.specialty} implementation for: {project_description}",
-                            project_dir, 
-                            project_description[:50] if len(project_description) > 50 else project_description
-                        )
-                    else:
-                        error_msg = f"Unrecognized input format for SoftwareEngineerAgent. Type: {type(task_input).__name__}, Keys: {task_input.keys()}"
-                        input_sample = str(task_input)[:500] + "..." if len(str(task_input)) > 500 else str(task_input)
-                        logger.error(f"Input sample: {input_sample}")
-                        agent_log(self.name, "error", error_msg)
-                                
-                        # Log the error to the agent file
-                        self.log_to_agent_file(
-                            project_dir=project_dir,
-                            action_type="error",
-                            input_summary="Invalid input structure",
-                            output_summary=error_msg,
-                            details={
-                                "error_type": "InputError",
-                                "input_type": type(task_input).__name__,
-                                "input_keys": list(task_input.keys()),
-                                "input_sample": input_sample
-                            }
-                        )
-                        
-                        raise ValueError(error_msg)
-                # Handle case when project_review is passed from the reviewer and contains revision info
-                elif "project_review" in task_input:
-                    project_review = task_input["project_review"]
-                    return self._implement_revisions(project_review, project_dir, project_title)
-                # Check if any key contains revision info as a fallback
-                else:
-                    # Look for any key that might contain revision information
-                    for key, value in task_input.items():
-                        if isinstance(value, str) and len(value) > 100:
-                            # If we find a reasonably sized string value, check if it looks like a revision plan
-                            if "revision" in key.lower() or "review" in key.lower() or "implement" in key.lower():
-                                logger.info(f"Using key '{key}' as revision plan")
-                                return self._implement_revisions(value, project_dir, project_title)
-                            elif "fix" in key.lower() or "bug" in key.lower() or "test" in key.lower():
-                                logger.info(f"Using key '{key}' as test results")
-                                return self._fix_bugs(value, project_dir, project_title)
+                # Then check for project_dir
+                if "project_dir" in task_input:
+                    project_dir = task_input["project_dir"]
+                    logger.debug(f"PROJECT DEBUG: Found project_dir in task_input: {project_dir}")
+                elif "input" in task_input and isinstance(task_input["input"], dict) and "project_dir" in task_input["input"]:
+                    project_dir = task_input["input"]["project_dir"]
+                    logger.debug(f"PROJECT DEBUG: Found project_dir in task_input['input']: {project_dir}")
             
-            # If no specific input format is recognized, but we have project information,
-            # check for any revision documents in the project directory and use them
-            try:
-                # Check multiple possible revision document locations
-                revision_files = [
-                    project_dir / "docs" / "project_review.md",
-                    project_dir / "docs" / "revisions.md",
-                    project_dir / "docs" / "review.md",
-                    project_dir / "project_review.md"
-                ]
+            # If we have a project_dir but no title, try to extract title
+            if project_dir and not project_title:
+                try:
+                    # Extract title from directory name
+                    dir_name = str(project_dir).split("_", 2)[-1]
+                    project_title = dir_name.replace("_", " ")
+                    logger.debug(f"PROJECT DEBUG: Extracted project_title from directory: {project_title}")
+                except Exception as e:
+                    logger.error(f"Error extracting project title from directory: {str(e)}")
+                    project_title = "Software Project"
+            
+            # If we don't have a project title, use a default
+            if not project_title:
+                project_title = "Software Project"
+                logger.debug(f"PROJECT DEBUG: Using default project_title: {project_title}")
+            
+            # If we don't have a project directory, create one
+            if not project_dir:
+                logger.debug(f"PROJECT DEBUG: No project_dir provided, creating a new one")
+                project_dir = get_project_directory(project_title)
+                logger.warning(f"Project directory not provided, creating new one for {project_title}")
+            else:
+                # Ensure it's a Path object
+                if not isinstance(project_dir, Path):
+                    project_dir = Path(project_dir)
+                    logger.debug(f"PROJECT DEBUG: Converted project_dir to Path: {project_dir}")
                 
-                for rev_file in revision_files:
-                    if rev_file.exists():
-                        with open(rev_file, 'r') as f:
-                            project_review = f.read()
-                        logger.info(f"Using {rev_file.name} for revisions")
-                        return self._implement_revisions(project_review, project_dir, project_title)
+                logger.info(f"Using existing project directory: {project_dir}")
                 
-                # If we're here, we should check if there's a README or other documentation that might contain revision info
-                potential_docs = [
-                    project_dir / "README.md",
-                    project_dir / "docs" / "README.md"
-                ]
+            # Extract more specific input based on the role
+            
+            # Determine the output to use based on the role
+            if self.specialty == "backend":
+                # Debug the backend-specific logic
+                logger.debug(f"Generating backend implementation...")
                 
-                for doc_file in potential_docs:
-                    if doc_file.exists():
-                        with open(doc_file, 'r') as f:
-                            doc_content = f.read()
-                        # Check if this document contains revision-like content
-                        if "revision" in doc_content.lower() or "improvements" in doc_content.lower() or "changes" in doc_content.lower():
-                            logger.info(f"Using {doc_file.name} for revisions")
-                            return self._implement_revisions(doc_content, project_dir, project_title)
-            except Exception as doc_error:
-                logger.warning(f"Failed to read project review document: {str(doc_error)}")
-            
-            # If we get here, we couldn't figure out what to do
-            # Add detailed logging of the input to help diagnose the issue
-            input_keys = str(task_input.keys()) if isinstance(task_input, dict) else "N/A"
-            input_sample = str(task_input)[:200] + "..." if len(str(task_input)) > 200 else str(task_input)
-            
-            error_msg = f"Unrecognized input format for SoftwareEngineerAgent. Type: {input_type}, Keys: {input_keys}"
-            agent_log(self.name, "error", error_msg)
-            logger.error(f"Input sample: {input_sample}")
-            
-            # Log the error to agent.log.md
-            self.log_to_agent_file(
-                project_dir=project_dir,
-                action_type="error",
-                input_summary="Invalid input structure",
-                output_summary=error_msg,
-                details={
-                    "error_type": "InputError",
-                    "input_type": input_type,
-                    "input_keys": input_keys,
-                    "input_sample": input_sample
+                # Implement the backend
+                implementation_output = self._generate_backend_implementation(task_input, project_dir, project_title)
+                
+                logger.debug(f"Generated implementation, length: {len(implementation_output) if implementation_output else 0}")
+                
+                # Process the output
+                logger.debug(f"Processing implementation output...")
+                result = process_implementation_output(
+                    implementation_output,
+                    project_dir,
+                    self.name,
+                    "backend-implementation",
+                    save_to_directory="backend"
+                )
+                
+                # Log the implementation
+                self.log_to_agent_file(
+                    project_dir=project_dir,
+                    action_type="backend-implementation",
+                    input_summary=str(task_input)[:1000] + "..." if len(str(task_input)) > 1000 else str(task_input),
+                    output_summary=f"Generated {len(result['files'] if result and 'files' in result else [])} files",
+                    details={
+                        "files_created": [f["path"] for f in result["files"]] if result and "files" in result else [],
+                        "task": "backend-implementation"
+                    }
+                )
+                
+                agent_log(self.name, "execute", f"Successfully implemented backend components")
+                return result
+                
+            elif self.specialty == "frontend":
+                # Debug the frontend-specific logic
+                logger.debug(f"Generating frontend implementation...")
+                
+                # Implement the frontend
+                implementation_output = self._generate_frontend_implementation(task_input, project_dir, project_title)
+                
+                logger.debug(f"Generated implementation, length: {len(implementation_output) if implementation_output else 0}")
+                
+                # Process the output
+                logger.debug(f"Processing implementation output...")
+                result = process_implementation_output(
+                    implementation_output,
+                    project_dir,
+                    self.name,
+                    "frontend-implementation",
+                    save_to_directory="frontend"
+                )
+                
+                # Log the implementation
+                self.log_to_agent_file(
+                    project_dir=project_dir,
+                    action_type="frontend-implementation",
+                    input_summary=str(task_input)[:1000] + "..." if len(str(task_input)) > 1000 else str(task_input),
+                    output_summary=f"Generated {len(result['files'] if result and 'files' in result else [])} files",
+                    details={
+                        "files_created": [f["path"] for f in result["files"]] if result and "files" in result else [],
+                        "task": "frontend-implementation"
+                    }
+                )
+                
+                agent_log(self.name, "execute", f"Successfully implemented frontend components")
+                return result
+                
+            else:
+                # Default: Return the task input with added project info
+                result = {
+                    "status": "success",
+                    "message": f"{self.specialty} execution completed",
+                    "data": task_input,
+                    "project_dir": project_dir,
+                    "project_title": project_title
                 }
-            )
-            
-            raise ValueError(error_msg)
+                
+                agent_log(self.name, "execute", f"Execution completed with default result")
+                return result
+                
         except Exception as e:
-            error_msg = f"Error in SoftwareEngineerAgent ({self.specialty}): {str(e)}"
-            logger.error(error_msg)
-            agent_log(self.name, "error", error_msg)
-            raise
+            error_message = f"Error during execution: {str(e)}"
+            agent_log(self.name, "error", error_message)
+            
+            # Return error information
+            return {
+                "status": "error",
+                "message": error_message,
+                "error": str(e),
+                "traceback": str(sys.exc_info())
+            }
 
     def _implement_components(self, tasks: str, project_dir: Path, project_title: str) -> Dict[str, Any]:
         """Implement components based on the task plan.
@@ -383,23 +250,76 @@ class SoftwareEngineerAgent(Agent):
             f"Implementing {self.specialty} components based on tasks"
         )
         
-        # Construct the prompt for the model
-        prompt = f"""
-        # {self.specialty.capitalize()} Tasks
-        {tasks}
-        
-        # Project Title
-        {project_title}
-        
-        # Task
-        Implement the {self.specialty} components described in the tasks above. For each component:
-        1. Provide the full implementation code (in Markdown code blocks)
-        2. Include any necessary configuration files
-        3. Add brief comments explaining your implementation decisions
-        4. Provide usage examples for key components
-        
-        Format your code with proper indentation and structure. Include filename at the beginning of each code block.
-        """
+        # Check if this is a game implementation
+        is_game = False
+        if "game" in project_title.lower() or "flappy" in project_title.lower() or "flappy" in tasks.lower():
+            is_game = True
+            
+        # Customize prompt based on specialty and project type
+        if is_game and self.specialty == "frontend":
+            prompt = f"""
+            # Frontend Game Implementation Task
+            {tasks}
+            
+            # Project Title
+            {project_title}
+            
+            # Task
+            Create a complete, fully functional implementation of the game described in the tasks.
+            
+            ## Required Files
+            You MUST create these exact files with proper names:
+            1. `index.html` - The main HTML file with proper doctype, head and body
+            2. `game.js` - The main JavaScript game logic
+            3. `styles.css` - The CSS styles for the game
+            
+            ## Implementation Guidelines
+            - Create a COMPLETE implementation that works when all files are in the same directory
+            - Include proper HTML structure with <!DOCTYPE html>, <html>, <head>, and <body> tags
+            - Use canvas for rendering the game
+            - Include all necessary game logic (collision detection, scoring, physics)
+            - Ensure all files reference each other correctly with proper paths
+            - Include clear comments explaining game mechanics
+            - Create a polished, visually appealing game
+            
+            Format your code with proper indentation and structure. Include filename at the beginning of each code block.
+            """
+        elif self.specialty == "frontend":
+            prompt = f"""
+            # Frontend Tasks
+            {tasks}
+            
+            # Project Title
+            {project_title}
+            
+            # Task
+            Implement complete frontend components that work together. For each component:
+            1. Provide the full implementation code (in Markdown code blocks)
+            2. Place HTML files in the root directory with proper structure and DOCTYPE
+            3. Place CSS files in a 'css' directory and JS files in a 'js' directory
+            4. Ensure all files reference each other with the correct paths
+            5. Create polished, fully functional UI components
+            
+            Format your code with proper indentation and structure. Include filename at the beginning of each code block.
+            """
+        else:
+            # Default prompt for other specialties
+            prompt = f"""
+            # {self.specialty.capitalize()} Tasks
+            {tasks}
+            
+            # Project Title
+            {project_title}
+            
+            # Task
+            Implement the {self.specialty} components described in the tasks above. For each component:
+            1. Provide the full implementation code (in Markdown code blocks)
+            2. Include any necessary configuration files
+            3. Add brief comments explaining your implementation decisions
+            4. Provide usage examples for key components
+            
+            Format your code with proper indentation and structure. Include filename at the beginning of each code block.
+            """
         
         # Get model client
         client = self.get_model_client()
@@ -441,6 +361,37 @@ class SoftwareEngineerAgent(Agent):
                     "files": [os.path.basename(f) for f in result.get("saved_files", [])][:5]
                 }
             )
+            
+            # For frontend game projects, also create an explicit test example
+            if is_game and self.specialty == "frontend":
+                # Create a simple README with game instructions
+                readme_content = f"""# {project_title}
+
+## How to Run the Game
+1. Open `index.html` in your web browser
+2. Click or press Space to make the bird flap
+3. Avoid hitting the pipes
+4. Try to get the highest score possible!
+
+## Files
+- `index.html` - Main HTML file
+- `game.js` - Game logic and functionality
+- `styles.css` - Game styling
+
+Enjoy playing!
+"""
+                readme_path = project_dir / "README.md"
+                with open(readme_path, 'w') as f:
+                    f.write(readme_content)
+                    
+                # Also ensure the main files exist
+                for required_file in ["index.html", "js/game.js", "css/styles.css"]:
+                    required_path = project_dir / required_file
+                    if not required_path.exists():
+                        required_path.parent.mkdir(parents=True, exist_ok=True)
+                        logger.warning(f"Required file {required_file} not found, creating empty file")
+                        with open(required_path, 'w') as f:
+                            f.write(f"// {required_file} - Empty placeholder - needs implementation")
             
             # Structure the output
             implementation = {

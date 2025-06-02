@@ -5,6 +5,7 @@ import concurrent.futures
 from concurrent.futures import Future
 import threading
 import time
+from pathlib import Path
 
 from mimi.core.project import Project
 from mimi.core.task import Task, SubTask
@@ -204,12 +205,6 @@ class ProjectRunner:
         self.max_workers = max_workers
         self.results = {}  # Store task results by name
         
-        project_log(
-            project.name,
-            "init",
-            f"Project runner initialized for project '{project.name}' (parallel={parallel}, max_workers={max_workers})",
-        )
-        
     def _run_task(self, task_name: str, task_input: Any) -> Dict[str, Any]:
         """Execute a single task and store its result.
         
@@ -229,26 +224,84 @@ class ProjectRunner:
             f"Executing task '{task_name}'",
         )
         
-        start_time = time.time()
+        # Ensure project metadata is properly passed to each task
+        if isinstance(task_input, dict):
+            # Log detailed task input for debugging
+            input_keys = list(task_input.keys()) if isinstance(task_input, dict) else []
+            
+            logger.debug(f"Task input type: {type(task_input)}")
+            logger.debug(f"Task input: {str(task_input).replace('{', '{{').replace('}', '}}')}")
+
+            # Log project metadata in task input
+            if "project_dir" in task_input:
+                logger.debug(
+                    f"ProjectRunner._run_task for '{task_name}' - project_dir in input: "
+                    f"type={type(task_input['project_dir'])}, value='{task_input['project_dir']}'"
+                )
+                # Check project_dir type and convert to Path if needed
+                if not isinstance(task_input["project_dir"], Path):
+                    project_dir_str = str(task_input["project_dir"])
+                    task_input["project_dir"] = Path(project_dir_str)
+                    logger.debug(f"Converted project_dir from string to Path: {task_input['project_dir']}")
+            else:
+                # Try to extract project_dir from input['input'] if it exists
+                promoted = False
+                if "input" in task_input and isinstance(task_input["input"], dict):
+                    if "project_dir" in task_input["input"]:
+                        task_input["project_dir"] = task_input["input"]["project_dir"]
+                        logger.debug(f"Promoted project_dir from 'input' to top level: {task_input['project_dir']}")
+                        promoted = True
+                    # Also promote project_title if present in nested input
+                    if "project_title" in task_input["input"]:
+                        task_input["project_title"] = task_input["input"]["project_title"]
+                        logger.debug(f"Promoted project_title from 'input' to top level: {task_input['project_title']}")
+                if not promoted:
+                    logger.debug(f"ProjectRunner._run_task for '{task_name}' - No project_dir in input (even after promotion). Keys: {input_keys}")
+            # Always ensure we have project_title
+            if "project_title" not in task_input:
+                # Set from self.project.name as a last resort
+                task_input["project_title"] = self.project.name
+                logger.debug(f"Set project_title from self.project.name: {self.project.name}")
+        
+        # Execute the task
+        time_start = time.time()
         result = runner.run(task_input)
-        duration = time.time() - start_time
+        execution_time = time.time() - time_start
         
-        # Store the result with metadata
-        with threading.Lock():
-            self.results[task_name] = {
-                "data": result,
-                "duration": duration,
-                "task": task_name,
-                "output_key": task.output_key
-            }
+        # Make sure the result includes project_dir and title if they exist in input
+        if isinstance(result, dict) and isinstance(task_input, dict):
+            # Propagate project_dir to result
+            if "project_dir" in task_input:
+                found_project_dir = False
+                
+                # Check if project_dir already exists in result
+                if "project_dir" in result:
+                    found_project_dir = True
+                elif "data" in result and isinstance(result["data"], dict) and "project_dir" in result["data"]:
+                    # Extract project_dir from nested data
+                    project_dir = result["data"]["project_dir"]
+                    result["project_dir"] = project_dir
+                    found_project_dir = True
+                    logger.debug(f"Propagated project_dir from result.data to top level: {project_dir}")
+                
+                # If project_dir not found in result, add it from input
+                if not found_project_dir:
+                    result["project_dir"] = task_input["project_dir"]
+                    logger.debug(f"Propagated project_dir to task result: {task_input['project_dir']}")
+            
+            # Propagate project_title to result
+            if "project_title" in task_input and "project_title" not in result:
+                result["project_title"] = task_input["project_title"]
+                logger.debug(f"Propagated project_title to task result: {task_input['project_title']}")
         
+        # Mark the task as completed
         project_log(
             self.project.name,
             "task_completed",
-            f"Task '{task_name}' completed in {duration:.2f}s",
+            f"Task '{task_name}' completed in {execution_time:.2f}s",
         )
         
-        return self.results[task_name]
+        return result
     
     def _get_ready_tasks(self, completed_tasks: Set[str]) -> List[str]:
         """Get tasks that are ready to execute based on dependencies.

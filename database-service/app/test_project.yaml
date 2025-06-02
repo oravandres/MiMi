@@ -1,0 +1,56 @@
+project_name: Test Project
+project_description: A simple test project for MiMi database import
+
+agents:
+- name: writer
+  role: content_writer
+  description: Creates high-quality content based on provided topics
+  model_name: gpt-4o
+  model_provider: openai
+  model_settings:
+    temperature: 0.7
+    max_tokens: 2048
+  system_prompt: You are an expert content writer with expertise in various domains.
+
+- name: reviewer
+  role: content_reviewer
+  description: Reviews and refines content for accuracy and clarity
+  model_name: claude-3-sonnet
+  model_provider: anthropic
+  model_settings:
+    temperature: 0.3
+    max_tokens: 2048
+  system_prompt: You are a meticulous content reviewer with a keen eye for detail.
+
+sub_projects:
+- name: content_creation
+  description: Content writing and review processes
+  tasks:
+  - name: research_topic
+    description: Research the given topic thoroughly
+    agent: writer
+    output_key: research_results
+
+  - name: write_draft
+    description: Write the initial draft based on research
+    agent: writer
+    depends_on:
+    - research_topic
+    input_key: research_results
+    output_key: initial_draft
+
+  - name: review_draft
+    description: Review the draft for quality and accuracy
+    agent: reviewer
+    depends_on:
+    - write_draft
+    input_key: initial_draft
+    output_key: review_feedback
+
+  - name: finalize_content
+    description: Incorporate review feedback and finalize content
+    agent: writer
+    depends_on:
+    - review_draft
+    input_key: review_feedback
+    output_key: final_content

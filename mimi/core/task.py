@@ -158,17 +158,29 @@ class Task(BaseModel):
             self.name, 
             "started", 
             f"Executing task with agent '{self.agent}'",
-            data={"input": input_data},
+            data={"input": input_data, "agent": self.agent},
         )
+
+        logger.debug(f"Task '{self.name}' input data details: {str(input_data).replace('{', '{{').replace('}', '}}')}", extra={"task_name": self.name})
+
+        if isinstance(input_data, dict):
+            if "project_dir" in input_data:
+                project_dir = input_data["project_dir"]
+                logger.debug(f"Task '{self.name}' received project_dir in input_data: type={type(project_dir)}, value='{project_dir}'")
+            else:
+                logger.debug(f"Task '{self.name}' input_data does not contain project_dir. Keys: {list(input_data.keys())}")
+        else:
+            logger.debug(f"Task '{self.name}' input_data is not a dict, type={type(input_data)}")
         
-        # For Analyst and FeedbackProcessor agents, clean input data first
+        # For Analyst agents only, clean input data first
         # to prevent them from processing old results
-        if agent.__class__.__name__ in ["AnalystAgent", "FeedbackProcessorAgent"]:
+        if agent.__class__.__name__ == "AnalystAgent":
             if isinstance(input_data, dict):
                 task_log(
                     self.name,
                     "processing",
-                    "Cleaning input data for verification/feedback agent",
+                    "Cleaning input data for verification agent",
+                    data={"agent": self.agent},
                 )
                 input_data = _clean_verification_results(input_data)
         
@@ -182,11 +194,11 @@ class Task(BaseModel):
                         self.name,
                         "processing",
                         f"Using input from key '{self.input_key}'",
-                        data={"extracted_input": task_input},
+                        data={"extracted_input": task_input, "agent": self.agent},
                     )
                 else:
                     warning_msg = f"Input key '{self.input_key}' not found in data, using full input"
-                    task_log(self.name, "warning", warning_msg)
+                    task_log(self.name, "warning", warning_msg, data={"agent": self.agent})
                     task_input = input_data
             else:
                 # Multiple input keys (list)
@@ -201,17 +213,18 @@ class Task(BaseModel):
                 
                 if missing_keys:
                     warning_msg = f"Some input keys not found in data: {missing_keys}"
-                    task_log(self.name, "warning", warning_msg)
+                    task_log(self.name, "warning", warning_msg, data={"agent": self.agent})
                 
                 if not collected_inputs:
                     warning_msg = "None of the specified input keys found in data, using full input"
-                    task_log(self.name, "warning", warning_msg)
+                    task_log(self.name, "warning", warning_msg, data={"agent": self.agent})
                     task_input = input_data
                 else:
                     task_log(
                         self.name,
                         "processing",
                         f"Using input from keys: {list(collected_inputs.keys())}",
+                        data={"agent": self.agent},
                     )
                     task_input = collected_inputs
         else:
@@ -223,6 +236,7 @@ class Task(BaseModel):
                 self.name,
                 "processing",
                 f"Agent '{self.agent}' supports subtask creation. Attempting to split task.",
+                data={"agent": self.agent},
             )
             
             # Clear any previous subtasks
@@ -236,6 +250,7 @@ class Task(BaseModel):
                     self.name,
                     "processing",
                     f"Task split into {len(subtasks)} subtasks",
+                    data={"agent": self.agent},
                 )
                 
                 # Store subtasks
@@ -250,7 +265,7 @@ class Task(BaseModel):
         result = agent.execute(task_input)
         
         # Apply cleaning based on agent type
-        if agent.__class__.__name__ in ["AnalystAgent", "FeedbackProcessorAgent"] and isinstance(result, dict):
+        if agent.__class__.__name__ == "AnalystAgent" and isinstance(result, dict):
             result = _clean_verification_results(result)
             task_log(
                 self.name,
@@ -266,7 +281,7 @@ class Task(BaseModel):
                 self.name,
                 "completed",
                 f"Stored result in output key '{self.output_key}'",
-                data={"result": result},
+                data={"agent": self.agent, "output_key": self.output_key, "description": self.description},
             )
             return output_data
         else:
@@ -274,7 +289,7 @@ class Task(BaseModel):
                 self.name,
                 "completed",
                 "Task completed successfully",
-                data={"result": result},
+                data={"agent": self.agent, "output_key": None, "description": self.description},
             )
             return result
 
@@ -295,6 +310,7 @@ class Task(BaseModel):
             self.name,
             "processing",
             f"Task has {len(self.subtasks)} subtasks to execute",
+            data={"agent": self.agent, "description": self.description},
         )
         
         # Let the agent handle the combining of subtask results

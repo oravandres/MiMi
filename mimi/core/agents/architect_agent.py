@@ -10,26 +10,33 @@ from mimi.utils.logger import agent_log, logger
 from mimi.utils.output_manager import (
     create_output_directory,
     save_code_blocks_from_text,
-    create_or_update_project_log,
-    _load_current_project_dir
+    create_or_update_project_log
 )
 
 
-def get_project_directory(project_title: str) -> Path:
+def get_project_directory(project_title: str, existing_dir: Path = None) -> Path:
     """Get the project directory, creating it if it doesn't exist.
     
     Args:
         project_title: The title of the project.
+        existing_dir: An existing project directory to use instead of creating a new one.
         
     Returns:
         The path to the project directory.
     """
-    # First try to load the existing project directory from state file
-    loaded_dir = _load_current_project_dir()
-    if loaded_dir is not None:
-        return loaded_dir
+    # Get caller info for debugging
+    import traceback
+    stack = traceback.extract_stack()
+    caller = stack[-2]  # Get caller info
+    logger.debug(f"PROJECT DIR DEBUG: get_project_directory({project_title}) called from {caller.filename}:{caller.lineno}")
     
-    # If no existing directory, create a new one
+    # If an existing directory is provided, use it
+    if existing_dir:
+        logger.debug(f"Using existing project directory: {existing_dir}")
+        return existing_dir
+    
+    # Create a path to the project directory using the output manager
+    # This will create a new directory with the given title
     return create_output_directory(project_title)
 
 
@@ -98,20 +105,20 @@ class ArchitectAgent(Agent):
             
             # Execute the appropriate method based on stage
             if stage == "architecture":
-                result = self._create_architecture(task_input)
+                result = self._create_architecture(task_input, project_dir)
             elif stage == "task_planning":
-                result = self._create_task_plan(task_input)
+                result = self._create_task_plan(task_input, project_dir)
             else:
                 error_msg = f"Unknown stage: {stage}"
                 agent_log(self.name, "error", error_msg)
                 raise ValueError(error_msg)
         else:
             # Default to architecture creation if no stage specified
-            result = self._create_architecture(task_input)
+            result = self._create_architecture(task_input, project_dir)
         
         return result
 
-    def _create_architecture(self, task_input: dict) -> dict:
+    def _create_architecture(self, task_input: dict, project_dir: Path) -> dict:
         """Create a software architecture plan based on specifications."""
         agent_log(
             self.name,
@@ -127,9 +134,6 @@ class ArchitectAgent(Agent):
             specifications = str(task_input)
             
         project_title = task_input.get("project_title", "Software Project")
-        
-        # Get the project directory
-        project_dir = get_project_directory(project_title)
         
         # Construct the prompt for the model
         prompt = f"""
@@ -229,7 +233,7 @@ class ArchitectAgent(Agent):
             
             raise
 
-    def _create_task_plan(self, task_input: dict) -> dict:
+    def _create_task_plan(self, task_input: dict, project_dir: Path) -> dict:
         """Create a task plan based on the architecture.
         
         Args:
@@ -247,13 +251,6 @@ class ArchitectAgent(Agent):
         # Extract architecture and other metadata
         architecture_plan = task_input.get("architecture_plan", "")
         project_title = task_input.get("project_title", "Unknown Project")
-        project_dir_str = task_input.get("project_dir", None)
-        
-        if project_dir_str:
-            project_dir = Path(project_dir_str)
-        else:
-            logger.warning(f"Project directory not provided, creating new one for {project_title}")
-            project_dir = get_project_directory(project_title)
         
         # Construct the prompt for the model
         prompt = f"""

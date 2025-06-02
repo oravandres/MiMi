@@ -271,4 +271,30 @@ class TestProjectRunner:
             assert "task1" in result
             assert "task2" in result
             assert "task3" in result
-            assert "task4" in result 
+            assert "task4" in result
+
+    def test_project_runner_raises_if_project_title_missing(self) -> None:
+        """Test that ProjectRunner raises ValueError if 'project_title' is missing from task_input."""
+        # Create mock agent and task
+        mock_agent = MagicMock(spec=Agent)
+        mock_agent.name = "agent1"
+        mock_task = MagicMock(spec=Task)
+        mock_task.name = "task1"
+        mock_task.agent = "agent1"
+        mock_task.depends_on = []
+        mock_task.input_key = ""
+        mock_task.output_key = "result1"
+        mock_task.execute.return_value = {"result1": 11}
+        mock_task.has_subtasks.return_value = False
+        # Create mock project
+        mock_project = MagicMock(spec=Project)
+        mock_project.name = "test-project"
+        mock_project.agents = {"agent1": mock_agent}
+        mock_project.tasks = {"task1": mock_task}
+        mock_project.get_execution_order.return_value = ["task1"]
+        # Create the runner
+        runner = ProjectRunner(mock_project)
+        # Run the project with input missing 'project_title' (should raise)
+        with pytest.raises(ValueError) as excinfo:
+            runner._run_task("task1", {"input": 10})
+        assert "project_title" in str(excinfo.value) 

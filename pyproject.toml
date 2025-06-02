@@ -25,6 +25,7 @@ dependencies = [
     "langchain-core>=0.1.15",
     "requests>=2.30.0",
     "loguru>=0.7.0",
+    "rich>=13.4.2",
 ]
 
 [project.optional-dependencies]

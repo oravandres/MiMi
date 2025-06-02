@@ -1,9 +1,11 @@
-"""Base agent implementation for MiMi."""
+"""Base agent classes for MiMi."""
 
 import sys
-from pathlib import Path
 import asyncio
-from typing import Any, Dict, List, Optional, Union, Callable
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
+import logging
+import os
 
 # Add vendor directory to path to find pydantic
 vendor_path = Path(__file__).parent.parent.parent / "vendor"
@@ -12,10 +14,15 @@ if vendor_path.exists() and str(vendor_path) not in sys.path:
 
 from pydantic import BaseModel, Field, ConfigDict
 
-from mimi.models.ollama import OllamaClient, get_ollama_client
-from mimi.utils.logger import agent_log, logger
-from mimi.utils.output_manager import create_or_update_agent_log
+# Import rich panel for pretty printing
+from rich.panel import Panel
 
+# Import the console from logger module
+from mimi.utils.logger import console, agent_log, logger
+from mimi.models.ollama import OllamaClient, get_ollama_client
+from mimi.utils.output_manager import (
+    create_or_update_agent_log
+)
 
 # Import subtask via function to avoid circular imports
 SubTask = None
@@ -61,28 +68,54 @@ class Agent(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def initialize(self) -> None:
-        """Initialize the agent and its model client."""
-        # We'll move the logging to after model client initialization
-        # to combine with model client log
+        """Initialize the agent with a model client."""
+        base_url = self.model_settings.get("base_url", "http://localhost:11434")
+        temperature = self.model_settings.get("temperature", 0.8)
+        timeout = self.model_settings.get("timeout", 60)
+        max_retries = self.model_settings.get("max_retries", 3)
+        retry_delay = self.model_settings.get("retry_delay", 2)
+        stream = self.model_settings.get("stream", True)
         
+        # Initialize the model client based on provider
         if self.model_provider.lower() == "ollama":
-            base_url = self.model_settings.get("base_url", "http://localhost:11434")
-            temperature = self.model_settings.get("temperature", 0.7)
-            stream = self.model_settings.get("stream", False)
-            
-            # Pass suppress_log=True to prevent separate logging in the client
-            self._model_client = get_ollama_client(
-                model_name=self.model_name,
-                base_url=base_url,
-                temperature=temperature,
-                suppress_log=True,  # Add parameter to suppress separate logging
-                stream=stream,
-            )
-            
-            # Combined log message for both agent and model initialization
-            logger.info(
-                f"Initialized agent '{self.name}' with role '{self.role}' using {self.model_provider} model: {self.model_name}"
-            )
+            try:
+                # Import here to avoid circular imports
+                from mimi.models.ollama import OllamaClient
+                
+                # Create the client
+                self._model_client = OllamaClient(
+                    model_name=self.model_name,
+                    base_url=base_url,
+                    temperature=temperature,
+                    timeout=timeout,  # Pass timeout to get_ollama_client
+                    max_retries=max_retries,
+                    retry_delay=retry_delay,
+                    suppress_log=True,  # Add parameter to suppress separate logging
+                    stream=stream,
+                )
+                
+                # Check if Ollama server is running
+                try:
+                    self._model_client.initialize_connection()
+                    # Combined log message for both agent and model initialization
+                    panel_content = f"""[bold blue]🔄 Agent:[/] [bold green]{self.name}[/]
+[bold yellow]📝 Role:[/] {self.role}
+[bold cyan]🤖 Model:[/] {self.model_name} ({self.model_provider})
+[bold green]⚙️ Settings:[/] timeout: {timeout}s, retries: {max_retries}"""
+
+                    console.print(Panel(
+                        panel_content,
+                        title="✓ Agent Initialized",
+                        border_style="green",
+                        expand=False
+                    ))
+                except Exception as e:
+                    logger.error(f"Failed to connect to Ollama server: {str(e)}")
+                    # We still keep the client but it will report proper errors when used
+                    logger.warning(f"Agent '{self.name}' initialized with potential connectivity issues. Tasks may fail when executed.")
+            except Exception as e:
+                logger.error(f"Error initializing Ollama client: {str(e)}")
+                raise ValueError(f"Failed to initialize model client: {str(e)}")
         else:
             # Log for non-Ollama providers
             logger.info(f"Initializing agent '{self.name}' with role '{self.role}'")
@@ -120,6 +153,9 @@ class Agent(BaseModel):
             log_format: Format for logging - "markdown" or "json"
             async_log: Whether to perform logging asynchronously (requires asyncio)
         """
+        # Debug project_dir type and value
+        logger.debug(f"log_to_agent_file called with project_dir type: {type(project_dir)}, value: '{project_dir}'")
+        
         try:
             if async_log:
                 # Define async logging function
@@ -192,7 +228,7 @@ class Agent(BaseModel):
                 )
         except Exception as e:
             # Don't let logging errors interrupt the agent
-            logger.error(f"Error logging to agent log file: {str(e)}")
+            logger.error(f"Error logging to agent log file: {str(e)}, project_dir type: {type(project_dir)}")
 
     def execute(self, task_input: Any) -> Any:
         """Execute a task with the given input.
@@ -215,6 +251,9 @@ class Agent(BaseModel):
             project_dir = None
             if isinstance(task_input, dict) and "project_dir" in task_input:
                 project_dir = task_input["project_dir"]
+                logger.debug(f"Found project_dir in task_input: {type(project_dir)}, value: '{project_dir}'")
+            else:
+                logger.debug(f"No project_dir found in task_input: {type(task_input)}")
             
             # Log execution to agent log file if we have a project directory
             if project_dir:
@@ -242,6 +281,7 @@ class Agent(BaseModel):
                 project_dir = None
                 if isinstance(task_input, dict) and "project_dir" in task_input:
                     project_dir = task_input["project_dir"]
+                    logger.debug(f"[Recovery] Found project_dir in task_input: {type(project_dir)}, value: '{project_dir}'")
                 
                 # Log recovery to agent log file if we have a project directory
                 if project_dir:
@@ -505,4 +545,41 @@ class Agent(BaseModel):
         client = self.get_model_client()
         
         # Use the agent's system_prompt when generating text
-        return client.generate(prompt, system_prompt=self.system_prompt) 
+        return client.generate(prompt, system_prompt=self.system_prompt)
+
+    def write_log_to_file(self, project_dir, content, subfolder, filename, create_dirs=True):
+        """
+        Writes agent output to a log file in the project directory.
+        
+        Args:
+            project_dir (Path): Project directory path
+            content (str): Content to write to the file
+            subfolder (str): Subfolder within project directory (e.g., 'docs', 'src', 'tests')
+            filename (str): Name of the file to write
+            create_dirs (bool): Whether to create directories if they don't exist
+            
+        Returns:
+            Path: Path to the written file or None if writing failed
+        """
+        try:
+            # Ensure project_dir is a Path object
+            if isinstance(project_dir, str):
+                project_dir = Path(project_dir)
+            
+            # Create the target directory path
+            target_dir = project_dir / subfolder
+            if create_dirs:
+                target_dir.mkdir(exist_ok=True, parents=True)
+            
+            # Create the file path
+            file_path = target_dir / filename
+            
+            # Write the content to the file
+            with open(file_path, 'w') as f:
+                f.write(content)
+                
+            logging.info(f"Successfully wrote {filename} to {file_path}")
+            return file_path
+        except Exception as e:
+            logging.error(f"Failed to write {filename}: {str(e)}")
+            return None 

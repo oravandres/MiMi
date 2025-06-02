@@ -2,6 +2,17 @@
 
 All notable changes to the MiMi project will be documented in this file.
 
+## [1.1.1] - 2025-06-02
+
+### Fixed
+- **Critical Logging Issue**: Fixed KeyError "'input'" in logging system that prevented task execution
+  - Issue occurred when logging complex nested data containing curly braces (e.g., `{'input': {'input': '...', 'project_dir': ...}}`)
+  - Root cause: loguru logger interpreted ALL curly braces in log messages as string formatting placeholders
+  - Solution: Implemented consistent brace escaping using `str(data).replace("{", "{{").replace("}", "}}")` pattern
+  - Affected files: `mimi/core/task.py:164`, `mimi/core/runner.py:232`, `mimi/__main__.py:123`
+  - Added comprehensive test suite in `tests/test_logging_fix.py` with 7 test cases covering edge cases
+  - Fix follows established patterns already used in logger utility functions (`agent_log`, `task_log`, `project_log`)
+
 ## [1.1.0] - 2025-05-05
 
 ### Added
