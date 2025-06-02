@@ -440,7 +440,15 @@ class ProjectRunner:
                                 dep_task = self.project.tasks.get(dep_name)
                                 if dep_task and dep_task.output_key == task.input_key:
                                     if dep_name in self.results:
-                                        task_input = self.results[dep_name]["data"]
+                                        # Extract the specific value stored under the output_key
+                                        # The task result is stored as: self.results[dep_name]["data"]
+                                        # And the agent result was stored under the output_key by Task.execute()
+                                        dep_result_data = self.results[dep_name]["data"]
+                                        if isinstance(dep_result_data, dict) and dep_task.output_key in dep_result_data:
+                                            task_input = dep_result_data[dep_task.output_key]
+                                        else:
+                                            # Fallback to the entire result if output_key not found
+                                            task_input = dep_result_data
                                         found_input = True
                                         break
                             
@@ -479,6 +487,13 @@ class ProjectRunner:
                     task_name = task_futures[future]
                     try:
                         result = future.result()
+                        # Store the task result in the results dictionary with the proper structure
+                        task = self.project.tasks[task_name]
+                        self.results[task_name] = {
+                            "data": result,
+                            "output_key": task.output_key,
+                            "duration": result.get("duration", 0.0) if isinstance(result, dict) else 0.0
+                        }
                         completed_tasks.add(task_name)
                         self._processing_tasks.remove(task_name)  # Remove task from processing set
                     except Exception as e:

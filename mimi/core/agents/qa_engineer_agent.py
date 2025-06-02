@@ -165,6 +165,16 @@ class QAEngineerAgent(Agent):
                     # If we still don't have a meaningful value, use the whole thing
                     integrated_system = str(task_input)
                 return self._test_system(integrated_system, task_input, project_dir, project_title)
+            elif "integrated_frontend" in task_input:
+                # Handle frontend QA testing specifically
+                integrated_frontend = task_input.get("integrated_frontend", "")
+                agent_log(self.name, "execute", f"Testing integrated frontend for {project_title}")
+                return self._test_system(integrated_frontend, task_input, project_dir, project_title)
+            elif "integrated_backend" in task_input:
+                # Handle backend QA testing specifically
+                integrated_backend = task_input.get("integrated_backend", "")
+                agent_log(self.name, "execute", f"Testing integrated backend for {project_title}")
+                return self._test_system(integrated_backend, task_input, project_dir, project_title)
             elif "fixed_system" in task_input:
                 fixed_system = task_input.get("fixed_system", "")
                 return self._create_documentation(fixed_system, task_input, project_dir, project_title)
@@ -190,6 +200,10 @@ class QAEngineerAgent(Agent):
         if not project_dir_str:
             project_dir = get_project_directory(project_title)
         
+        # Provide better debugging information
+        input_keys = list(task_input.keys()) if isinstance(task_input, dict) else "Not a dict"
+        logger.error(f"QA Agent {self.name} failed to parse input. Available keys: {input_keys}")
+        
         # Log the error to the agent file
         self.log_to_agent_file(
             project_dir=project_dir,
@@ -198,6 +212,7 @@ class QAEngineerAgent(Agent):
             output_summary="Failed to parse input for QA testing",
             details={
                 "input_type": str(type(task_input)),
+                "input_keys": input_keys,
                 "agent_role": self.role,
                 "model_name": self.model_name,
                 "model_provider": self.model_provider

@@ -145,68 +145,22 @@ class SoftwareEngineerAgent(Agent):
                 logger.debug(f"Generating backend implementation...")
                 
                 # Implement the backend
-                implementation_output = self._generate_backend_implementation(task_input, project_dir, project_title)
+                implementation_output = self._implement_components(str(task_input), project_dir, project_title)
                 
-                logger.debug(f"Generated implementation, length: {len(implementation_output) if implementation_output else 0}")
-                
-                # Process the output
-                logger.debug(f"Processing implementation output...")
-                result = process_implementation_output(
-                    implementation_output,
-                    project_dir,
-                    self.name,
-                    "backend-implementation",
-                    save_to_directory="backend"
-                )
-                
-                # Log the implementation
-                self.log_to_agent_file(
-                    project_dir=project_dir,
-                    action_type="backend-implementation",
-                    input_summary=str(task_input)[:1000] + "..." if len(str(task_input)) > 1000 else str(task_input),
-                    output_summary=f"Generated {len(result['files'] if result and 'files' in result else [])} files",
-                    details={
-                        "files_created": [f["path"] for f in result["files"]] if result and "files" in result else [],
-                        "task": "backend-implementation"
-                    }
-                )
-                
+                # The _implement_components method already processes and saves files, so we can return its result directly
                 agent_log(self.name, "execute", f"Successfully implemented backend components")
-                return result
+                return implementation_output
                 
             elif self.specialty == "frontend":
                 # Debug the frontend-specific logic
                 logger.debug(f"Generating frontend implementation...")
                 
                 # Implement the frontend
-                implementation_output = self._generate_frontend_implementation(task_input, project_dir, project_title)
+                implementation_output = self._implement_components(str(task_input), project_dir, project_title)
                 
-                logger.debug(f"Generated implementation, length: {len(implementation_output) if implementation_output else 0}")
-                
-                # Process the output
-                logger.debug(f"Processing implementation output...")
-                result = process_implementation_output(
-                    implementation_output,
-                    project_dir,
-                    self.name,
-                    "frontend-implementation",
-                    save_to_directory="frontend"
-                )
-                
-                # Log the implementation
-                self.log_to_agent_file(
-                    project_dir=project_dir,
-                    action_type="frontend-implementation",
-                    input_summary=str(task_input)[:1000] + "..." if len(str(task_input)) > 1000 else str(task_input),
-                    output_summary=f"Generated {len(result['files'] if result and 'files' in result else [])} files",
-                    details={
-                        "files_created": [f["path"] for f in result["files"]] if result and "files" in result else [],
-                        "task": "frontend-implementation"
-                    }
-                )
-                
+                # The _implement_components method already processes and saves files, so we can return its result directly
                 agent_log(self.name, "execute", f"Successfully implemented frontend components")
-                return result
+                return implementation_output
                 
             else:
                 # Default: Return the task input with added project info

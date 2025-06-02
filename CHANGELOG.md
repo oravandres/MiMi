@@ -2,6 +2,19 @@
 
 All notable changes to the MiMi project will be documented in this file.
 
+## [1.1.2] - 2025-06-02
+
+### Fixed
+- **QA Agent Input Handling**: Fixed input format mismatch that prevented QA agents from processing advanced project tasks
+  - Issue: QA agents in advanced projects received `integrated_frontend` and `integrated_backend` input keys but only recognized `integrated_system`, `fixed_system`, and `implementation` keys
+  - Root cause: Naming mismatch between project task configuration and QAEngineerAgent implementation
+  - Solution: Added support for `integrated_frontend` and `integrated_backend` input keys in QAEngineerAgent.execute() method
+  - Affected files: `mimi/core/agents/qa_engineer_agent.py`
+  - Both new handlers call `_test_system()` method with appropriate logging for specialized frontend/backend testing
+  - Enhanced error handling with better debugging information including available input keys
+  - Added comprehensive test suite in `tests/test_qa_engineer_agent.py` with 9 test cases covering all input scenarios
+  - Fix maintains backward compatibility and follows established codebase patterns
+
 ## [1.1.1] - 2025-06-02
 
 ### Fixed
